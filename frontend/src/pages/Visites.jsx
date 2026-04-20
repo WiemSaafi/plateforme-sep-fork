@@ -23,7 +23,7 @@ export default function Visites() {
   const chargerDonnees = async () => {
     setLoading(true)
     try {
-      const resP = await fetch('http://localhost:8000/api/patients?limit=100', { headers })
+      const resP = await fetch('/api/patients?limit=100', { headers })
       const dataP = await resP.json()
       const listePatients = dataP.data || []
       setPatients(listePatients)
@@ -31,7 +31,7 @@ export default function Visites() {
       // Charger les visites de tous les patients
       const toutesVisites = []
       for (const p of listePatients) {
-        const resV = await fetch(`http://localhost:8000/api/patients/${p.id}/visites`, { headers })
+        const resV = await fetch(`/api/patients/${p.id}/visites`, { headers })
         const dataV = await resV.json()
         const liste = Array.isArray(dataV) ? dataV : (dataV.data || [])
         liste.forEach(v => toutesVisites.push({
@@ -62,7 +62,7 @@ export default function Visites() {
         notes: form.notes,
         edss_score: form.edss_score ? parseFloat(form.edss_score) : null,
       }
-      const res = await fetch(`http://localhost:8000/api/patients/${form.patient_id}/visites`, {
+      const res = await fetch(`/api/patients/${form.patient_id}/visites`, {
         method: 'POST', headers, body: JSON.stringify(body)
       })
       if (res.ok) {

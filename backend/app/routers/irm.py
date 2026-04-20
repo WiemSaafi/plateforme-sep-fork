@@ -23,6 +23,8 @@ def serialize(irm: IRMScan) -> dict:
         "patient_id": irm.patient_id,
         "visite_id": irm.visite_id,
         "fichier_path": irm.fichier_path,
+        "fichier_url": irm.fichier_path,  # Alias pour compatibilité frontend
+        "chemin_fichier": irm.fichier_path,  # Alias pour compatibilité frontend
         "sequence_type": irm.sequence_type,
         "format_fichier": irm.metadata_dicom.get("format"),
         "metadata": irm.metadata_dicom,

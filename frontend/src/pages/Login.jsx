@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Sparkles, ArrowRight, Brain, Shield, Activity } from 'lucide-react'
+import Logo from '../components/Logo'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -137,18 +138,8 @@ export default function Login() {
       }}>
         <div style={{ width: '100%', maxWidth: '360px' }}>
           {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '44px' }}>
-            <div style={{
-              width: '34px', height: '34px', borderRadius: '9px',
-              background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
-            }}>
-              <Sparkles size={16} color="#fff" />
-            </div>
-            <span style={{ fontSize: '17px', fontWeight: 700, color: '#1a1d26', letterSpacing: '-0.02em' }}>
-              SEP Platform
-            </span>
+          <div style={{ marginBottom: '44px' }}>
+            <Logo size="md" variant="compact" linkTo="/" />
           </div>
 
           <h1 style={{
@@ -221,6 +212,11 @@ export default function Login() {
             Pas encore de compte ?{' '}
             <Link to="/inscription" style={{ color: '#4f46e5', textDecoration: 'none', fontWeight: 600 }}>
               S'inscrire
+            </Link>
+          </p>
+          <p style={{ textAlign: 'center', fontSize: '13px', color: '#6b7280', marginTop: '12px' }}>
+            <Link to="/" style={{ color: '#9ca3b0', textDecoration: 'none', fontWeight: 500 }}>
+              ← Retour à l'accueil
             </Link>
           </p>
         </div>

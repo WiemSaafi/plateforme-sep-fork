@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/layout/Layout'
+import HomePage from './pages/HomePage'
 import Dashboard from './pages/Dashboard'
 import PatientsList from './pages/patients/PatientsList'
 import PatientDetail from './pages/patients/PatientDetail'
@@ -14,6 +15,7 @@ import Analyses from './pages/laboratoire/Analyses'
 import Resultats from './pages/laboratoire/Resultats'
 import AdminUtilisateurs from './pages/admin/AdminUtilisateurs'
 import AdminValidations from './pages/admin/AdminValidations'
+import AdminParametres from './pages/admin/AdminParametres'
 import Visites from './pages/Visites'
 import Agenda from './pages/Agenda'
 import MesRapports from './pages/radiologue/MesRapports'
@@ -24,6 +26,7 @@ import MonDossier from './pages/patient/MonDossier'
 import MonEvolution from './pages/patient/MonEvolution'
 import MesRapportsPatient from './pages/patient/MesRapportsPatient'
 import ActualitesSEP from './pages/patient/ActualitesSEP'
+import RendezVous from './pages/patient/RendezVous'
 
 
 function PrivateRoute({ children, roles }) {
@@ -34,18 +37,28 @@ function PrivateRoute({ children, roles }) {
   return children
 }
 
+function HomeRedirect() {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (user) return <Navigate to="/dashboard" replace />
+  return <HomePage />
+}
+
 function AppRoutes() {
   return (
     <Routes>
+      {/* Public pages */}
+      <Route path="/" element={<HomeRedirect />} />
+      <Route path="/home" element={<HomePage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/inscription" element={<Inscription />} />
       <Route path="/admin" element={<Navigate to="/admin/utilisateurs" replace />} />
-      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-      <Route path="agenda" element={<PrivateRoute roles={['medecin', 'admin']}><Agenda /></PrivateRoute>} />
-      <Route path="chat" element={<PrivateRoute roles={['medecin', 'admin']}><ChatIA /></PrivateRoute>} />
-      <Route path="rapports" element={<PrivateRoute roles={['radiologue']}><MesRapports /></PrivateRoute>} />
 
-        <Route index element={<Navigate to="/dashboard" replace />} />
+      {/* Authenticated layout — same paths as before */}
+      <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route path="agenda" element={<PrivateRoute roles={['medecin', 'admin']}><Agenda /></PrivateRoute>} />
+        <Route path="chat" element={<PrivateRoute roles={['medecin', 'admin']}><ChatIA /></PrivateRoute>} />
+        <Route path="rapports" element={<PrivateRoute roles={['radiologue']}><MesRapports /></PrivateRoute>} />
         <Route path="dashboard" element={<Dashboard />} />
 
         {/* Médecin */}
@@ -64,11 +77,13 @@ function AppRoutes() {
         {/* Admin */}
         <Route path="admin/utilisateurs" element={<PrivateRoute roles={['admin']}><AdminUtilisateurs /></PrivateRoute>} />
         <Route path="admin/validations" element={<PrivateRoute roles={['admin']}><AdminValidations /></PrivateRoute>} />
+        <Route path="admin/settings" element={<PrivateRoute roles={['admin']}><AdminParametres /></PrivateRoute>} />
 
         {/* Patient */}
         <Route path="mon-dossier" element={<PrivateRoute roles={['patient']}><MonDossier /></PrivateRoute>} />
         <Route path="mon-evolution" element={<PrivateRoute roles={['patient']}><MonEvolution /></PrivateRoute>} />
         <Route path="mes-rapports" element={<PrivateRoute roles={['patient']}><MesRapportsPatient /></PrivateRoute>} />
+        <Route path="rendez-vous" element={<PrivateRoute roles={['patient']}><RendezVous /></PrivateRoute>} />
         <Route path="actualites" element={<PrivateRoute roles={['patient']}><ActualitesSEP /></PrivateRoute>} />
       </Route>
     </Routes>

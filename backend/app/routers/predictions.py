@@ -7,8 +7,8 @@ import os
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CHECKPOINT_CLS  = os.path.join(BASE_DIR, "ai", "checkpoints", "resnet_classifier.pth")
-CHECKPOINT_PRED = os.path.join(BASE_DIR, "ai", "checkpoints", "predictor_lesions_v2.pth")
+CHECKPOINT_CLS  = os.path.join(BASE_DIR, "ai", "checkpoints", "resnet_classifier 1.pth")
+CHECKPOINT_PRED = os.path.join(BASE_DIR, "ai", "checkpoints", "predictor_lesions_v2 1.pth")
 CHECKPOINT_LSTM = os.path.join(BASE_DIR, "ai", "checkpoints", "convlstm_predictor_aug.pth")
 
 _cls_cache  = None

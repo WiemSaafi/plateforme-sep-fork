@@ -17,7 +17,7 @@ export default function AdminUtilisateurs() {
   const charger = async () => {
     setLoading(true)
     try {
-      const res = await fetch('http://localhost:8000/api/admin/utilisateurs', { headers })
+      const res = await fetch('/api/admin/utilisateurs', { headers })
       const data = await res.json()
       const filtres = data.filter(u => u.role !== 'admin')
       if (onglet === 'en_attente') {
@@ -34,7 +34,7 @@ export default function AdminUtilisateurs() {
 
   const action = async (id, acte) => {
     try {
-      await fetch(`http://localhost:8000/api/admin/utilisateurs/${id}/${acte}`, {
+      await fetch(`/api/admin/utilisateurs/${id}/${acte}`, {
         method: 'PUT', headers
       })
       setMessage(acte === 'valider' ? '✅ Compte validé' : '❌ Compte refusé')

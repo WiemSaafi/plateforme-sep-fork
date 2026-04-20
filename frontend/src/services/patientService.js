@@ -17,7 +17,23 @@ export const patientService = {
   update: (id, data) =>
     api.put(`/patients/${id}`, data),
 
-  // Supprimer un patient
+  // Archiver un patient
+  archive: (id) =>
+    api.put(`/patients/${id}/archive`),
+
+  // Lister les patients archivés
+  getArchived: (page = 1, limit = 10, search = '', sexe = '') => {
+    // Convertir les paramètres pour éviter les problèmes
+    const params = {
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+      search: search && search.trim() ? search.trim() : undefined,
+      sexe: sexe && sexe.trim() ? sexe.trim() : undefined
+    }
+    return api.get('/patients/archived', { params })
+  },
+
+  // Supprimer un patient (non utilisé)
   delete: (id) =>
     api.delete(`/patients/${id}`),
 

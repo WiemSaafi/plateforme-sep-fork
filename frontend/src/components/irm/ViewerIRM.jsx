@@ -26,6 +26,37 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
     setLoading(true)
     setErreur(null)
     try {
+      // D'abord vérifier si l'IRM existe
+      const checkResponse = await fetch(`/api/patients/${patientId}/irm/${irmId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      if (!checkResponse.ok) {
+        setErreur("Aucune IRM trouvée pour ce patient")
+        setLoading(false)
+        return
+      }
+
+      const irmData = await checkResponse.json()
+      
+      // Vérifier si l'IRM a un fichier
+      if (!irmData.fichier_path && !irmData.fichier_url && !irmData.chemin_fichier) {
+        setErreur("Aucun fichier IRM disponible pour cette IRM")
+        setLoading(false)
+        return
+      }
+
+      // Vérifier si le fichier existe réellement
+      const fileResponse = await fetch(`/api/patients/${patientId}/irm/${irmId}/fichier`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      if (!fileResponse.ok) {
+        setErreur("Le fichier IRM n'est pas disponible")
+        setLoading(false)
+        return
+      }
+
       const { Niivue } = await import('@niivue/niivue')
 
       if (niivueRef.current) {
@@ -71,7 +102,13 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
       setLoading(false)
     } catch (e) {
       console.error(e)
-      setErreur('Impossible de charger le viewer IRM. ' + e.message)
+      if (e.message && e.message.includes('404')) {
+        setErreur("Aucun fichier IRM disponible")
+      } else if (e.message && e.message.includes('Not Found')) {
+        setErreur("Aucun fichier IRM disponible")
+      } else {
+        setErreur('Erreur lors du chargement de l\'IRM')
+      }
       setLoading(false)
     }
   }

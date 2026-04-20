@@ -198,8 +198,16 @@ export default function PatientDetail() {
           method: 'POST',
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         })
-        if (res.ok) setSepSainResultat(await res.json())
-      } catch (e) { console.error(e) }
+        if (res.ok) {
+          setSepSainResultat(await res.json())
+        } else {
+          const err = await res.json().catch(() => ({}))
+          setError(err.detail || `Erreur ${res.status}: ${res.statusText}`)
+        }
+      } catch (e) { 
+        console.error(e)
+        setError('Erreur de connexion au service de prédiction')
+      }
       finally { setSepSainLoading(false) }
     }
 

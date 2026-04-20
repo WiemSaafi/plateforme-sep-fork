@@ -2,9 +2,10 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Brain, Activity,
   Settings, LogOut, FlaskConical, FileText, Clock, Calendar, MessageSquare,
-  Newspaper, Heart, Sparkles, FolderOpen
+  Newspaper, Heart, Sparkles, FolderOpen, CalendarCheck
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import Logo from '../Logo'
 
 const menuParRole = {
   medecin: [
@@ -36,6 +37,7 @@ const menuParRole = {
     { to: '/mon-dossier', icon: FolderOpen, label: 'Mon dossier' },
     { to: '/mon-evolution', icon: Activity, label: 'Mon évolution' },
     { to: '/mes-rapports', icon: FileText, label: 'Mes rapports' },
+    { to: '/rendez-vous', icon: CalendarCheck, label: 'Rendez-vous' },
     { to: '/actualites', icon: Newspaper, label: 'Actualités SEP', badge: 'NEW' },
   ],
 }
@@ -76,23 +78,8 @@ export default function Sidebar() {
       zIndex: 10,
     }}>
       {/* Logo */}
-      <div style={{ padding: '0 24px 28px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <img
-          src="/logo-sep.png"
-          alt="SEP Platform"
-          style={{ width: '42px', height: '42px', objectFit: 'contain', flexShrink: 0 }}
-        />
-        <div>
-          <div style={{
-            fontSize: '17px', fontWeight: 700, letterSpacing: '-0.02em',
-            color: '#1a1d26',
-          }}>
-            SEP Platform
-          </div>
-          <div style={{ fontSize: '10px', color: '#9ca3b0', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            Intelligence Médicale
-          </div>
-        </div>
+      <div style={{ padding: '0 24px 28px' }}>
+        <Logo size="md" variant="full" linkTo="/dashboard" />
       </div>
 
       {/* User Card */}

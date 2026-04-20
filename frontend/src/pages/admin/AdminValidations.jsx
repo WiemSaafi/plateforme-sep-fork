@@ -17,7 +17,7 @@ export default function AdminValidations() {
 
   const chargerEnAttente = async () => {
     try {
-      const res = await axios.get('http://localhost:8000/api/admin/utilisateurs?statut=en_attente', { headers })
+      const res = await axios.get('/api/admin/utilisateurs?statut=en_attente', { headers })
       setUtilisateurs(res.data)
     } catch {
       setMessage('Erreur de chargement')
@@ -28,7 +28,7 @@ export default function AdminValidations() {
 
   const valider = async (id) => {
     try {
-      await axios.put(`http://localhost:8000/api/admin/utilisateurs/${id}/valider`, {}, { headers })
+      await axios.put(`/api/admin/utilisateurs/${id}/valider`, {}, { headers })
       setMessage('✅ Compte validé')
       chargerEnAttente()
     } catch {
@@ -38,7 +38,7 @@ export default function AdminValidations() {
 
   const refuser = async (id) => {
     try {
-      await axios.put(`http://localhost:8000/api/admin/utilisateurs/${id}/refuser`, {}, { headers })
+      await axios.put(`/api/admin/utilisateurs/${id}/refuser`, {}, { headers })
       setMessage('❌ Compte refusé')
       chargerEnAttente()
     } catch {

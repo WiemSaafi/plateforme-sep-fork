@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authService } from '../services/authService'
 import { Sparkles, ArrowRight, Stethoscope, Brain, FlaskConical, CheckCircle2, Heart } from 'lucide-react'
+import Logo from '../components/Logo'
 
 const ROLES = [
   { value: 'medecin', label: 'Médecin', desc: 'Consultation, visites, prédictions IA', icon: Stethoscope, color: '#4f46e5', bg: '#eef2ff' },
@@ -83,18 +84,8 @@ export default function Inscription() {
     }}>
       <div className="animate-slideUp" style={{ maxWidth: '480px', width: '100%' }}>
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px' }}>
-          <div style={{
-            width: '34px', height: '34px', borderRadius: '9px',
-            background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
-          }}>
-            <Sparkles size={16} color="#fff" />
-          </div>
-          <span style={{ fontSize: '17px', fontWeight: 700, color: '#1a1d26', letterSpacing: '-0.02em' }}>
-            SEP Platform
-          </span>
+        <div style={{ marginBottom: '32px' }}>
+          <Logo size="md" variant="compact" linkTo="/" />
         </div>
 
         {/* Card */}

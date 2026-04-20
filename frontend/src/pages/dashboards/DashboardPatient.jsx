@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { User, Activity, Brain, FileText, Newspaper, TrendingUp, TrendingDown, Minus, Clock, ArrowRight, Heart, Shield } from 'lucide-react'
+import { User, Activity, Brain, FileText, Newspaper, TrendingUp, TrendingDown, Minus, Clock, ArrowRight, Heart, Shield, Globe, Link2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { patientPortalService } from '../../services/patientPortalService'
+import axios from 'axios'
 
 export default function DashboardPatient() {
   const { user } = useAuth()
@@ -10,18 +11,21 @@ export default function DashboardPatient() {
   const [dossier, setDossier] = useState(null)
   const [evolution, setEvolution] = useState(null)
   const [actualites, setActualites] = useState([])
+  const [newsData, setNewsData] = useState({ organisations: [], ticker: [] })
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
     try {
-      const [dRes, eRes, aRes] = await Promise.all([
+      const [dRes, eRes, aRes, newsRes] = await Promise.all([
         patientPortalService.getMonDossier(),
         patientPortalService.getMonEvolution(),
         patientPortalService.getActualites(),
+        axios.get('http://127.0.0.1:8000/api/news').catch(() => ({ data: { organisations: [], ticker: [] } }))
       ])
       setDossier(dRes.data)
       setEvolution(eRes.data)
       setActualites(aRes.data.data?.slice(0, 3) || [])
+      setNewsData(newsRes.data || { organisations: [], ticker: [] })
     } catch (err) {
       console.error(err)
     } finally {
@@ -230,7 +234,7 @@ export default function DashboardPatient() {
           </div>
         </div>
 
-        {/* Actualités */}
+        {/* Organisations & Ressources */}
         <div style={{
           background: '#fff', borderRadius: '16px',
           border: '1px solid #eef0f4',
@@ -245,65 +249,109 @@ export default function DashboardPatient() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{
                 width: '36px', height: '36px', borderRadius: '10px',
-                background: '#fdf2f8', border: '1px solid #f9a8d4',
+                background: '#eef2ff', border: '1px solid #c7d2fe',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <Newspaper size={18} color="#db2777" />
+                <Globe size={18} color="#4f46e5" />
               </div>
-              <span style={{ fontWeight: 600, fontSize: '15px', color: '#1a1d26' }}>Actualités SEP</span>
+              <span style={{ fontWeight: 600, fontSize: '15px', color: '#1a1d26' }}>Organisations SEP</span>
             </div>
-            <button
-              onClick={() => navigate('/actualites')}
+            <a
+              href="/"
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px',
                 background: 'transparent', border: 'none', cursor: 'pointer',
                 fontSize: '12px', color: '#4f46e5', fontWeight: 600, fontFamily: 'inherit',
+                textDecoration: 'none',
               }}
             >
-              Voir tout <ArrowRight size={12} />
-            </button>
+              Voir plus <ArrowRight size={12} />
+            </a>
           </div>
 
-          <div style={{ padding: '0' }}>
+          <div style={{ padding: '16px 24px', maxHeight: '400px', overflowY: 'auto' }}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: '32px 0', color: '#9ca3b0', fontSize: '13px' }}>Chargement…</div>
-            ) : actualites.length > 0 ? (
-              actualites.map((article, i) => {
-                const cat = categorieColors[article.categorie] || categorieColors['Recherche']
-                return (
+            ) : newsData.organisations?.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {newsData.organisations.slice(0, 3).map(org => (
                   <div
-                    key={article.id}
+                    key={org.id}
                     style={{
-                      padding: '16px 24px',
-                      borderBottom: i < actualites.length - 1 ? '1px solid #f4f5f7' : 'none',
-                      cursor: 'pointer', transition: 'background 0.2s',
+                      background: '#f8f9fc', borderRadius: '12px',
+                      border: '1px solid #eef0f4',
+                      overflow: 'hidden', transition: 'all 0.2s',
+                      cursor: 'pointer',
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#fafbfd' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                    onClick={() => navigate('/actualites')}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.transform = 'translateY(-2px)'
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)' 
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.transform = 'translateY(0)'
+                      e.currentTarget.style.boxShadow = 'none' 
+                    }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{
-                        fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '6px',
-                        background: cat.bg, color: cat.color, border: `1px solid ${cat.border}`,
+                    <div style={{ padding: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', margin: 0, lineHeight: 1.3, flex: 1 }}>
+                          {org.name}
+                        </h4>
+                        <div style={{
+                          padding: '3px 8px', borderRadius: '6px',
+                          background: org.badge_color, color: '#fff',
+                          fontSize: '9px', fontWeight: 700, letterSpacing: '0.02em',
+                          flexShrink: 0, marginLeft: '8px',
+                        }}>
+                          {org.badge}
+                        </div>
+                      </div>
+                      <p style={{ fontSize: '11px', fontWeight: 600, color: org.subtitle_color, margin: '0 0 8px' }}>
+                        {org.subtitle}
+                      </p>
+                      <p style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5, margin: '0 0 12px', 
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' 
                       }}>
-                        {article.categorie}
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#9ca3b0' }}>{article.date}</span>
+                        {org.description}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#94a3b8' }}>
+                          <Link2 size={11} />
+                          {org.domain}
+                        </span>
+                        <a
+                          href={org.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '5px 12px', borderRadius: '6px',
+                            border: '1px solid #4f46e5', background: 'transparent',
+                            color: '#4f46e5', fontSize: '11px', fontWeight: 600,
+                            textDecoration: 'none', transition: 'all 0.2s',
+                            fontFamily: 'inherit',
+                          }}
+                          onMouseEnter={e => { 
+                            e.currentTarget.style.background = '#4f46e5'
+                            e.currentTarget.style.color = '#fff' 
+                          }}
+                          onMouseLeave={e => { 
+                            e.currentTarget.style.background = 'transparent'
+                            e.currentTarget.style.color = '#4f46e5' 
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          Visiter <ArrowRight size={10} />
+                        </a>
+                      </div>
                     </div>
-                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#1a1d26', margin: '0 0 4px', lineHeight: 1.4 }}>
-                      {article.titre}
-                    </p>
-                    <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {article.resume}
-                    </p>
                   </div>
-                )
-              })
+                ))}
+              </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <Newspaper size={24} color="#c4b5fd" style={{ margin: '0 auto 8px' }} />
-                <p style={{ color: '#9ca3b0', fontSize: '13px' }}>Aucune actualité</p>
+                <Globe size={24} color="#c4b5fd" style={{ margin: '0 auto 8px' }} />
+                <p style={{ color: '#9ca3b0', fontSize: '13px' }}>Aucune organisation disponible</p>
               </div>
             )}
           </div>

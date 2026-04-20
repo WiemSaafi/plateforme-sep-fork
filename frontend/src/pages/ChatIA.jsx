@@ -1,45 +1,46 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Trash2, ChevronDown } from 'lucide-react'
+import { Send, Bot, User, Trash2, Sparkles, Zap, Brain, MessageCircle } from 'lucide-react'
 import api from '../services/api'
 import { patientService } from '../services/patientService'
 
 const s = {
   page: {
     display: 'flex', flexDirection: 'column', height: '100%',
-    background: '#0f172a', color: '#f1f5f9', fontFamily: 'inherit',
+    background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', color: '#1a1d26', fontFamily: 'inherit',
   },
   header: {
-    padding: '20px 24px 16px', borderBottom: '1px solid #1e293b',
+    padding: '24px 32px', borderBottom: '1px solid #e2e8f0',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    flexShrink: 0,
+    flexShrink: 0, background: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
   headerLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
   headerIcon: {
-    width: '40px', height: '40px', borderRadius: '10px',
-    background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
+    width: '48px', height: '48px', borderRadius: '14px',
+    background: 'linear-gradient(135deg, #6366f1, #8b5cf6, #d946ef)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 8px 24px rgba(139, 92, 246, 0.4)',
   },
-  title: { fontSize: '18px', fontWeight: 700, color: '#f1f5f9' },
-  subtitle: { fontSize: '12px', color: '#64748b', marginTop: '2px' },
+  title: { fontSize: '20px', fontWeight: 700, color: '#1a1d26', letterSpacing: '-0.02em' },
+  subtitle: { fontSize: '13px', color: '#64748b', marginTop: '4px' },
   patientBar: {
-    padding: '12px 24px', borderBottom: '1px solid #1e293b',
+    padding: '16px 32px', borderBottom: '1px solid #e2e8f0',
     display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0,
-    background: '#0b1120',
+    background: '#fafbfc',
   },
   patientLabel: { fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' },
   select: {
-    flex: 1, maxWidth: '320px', padding: '8px 12px', borderRadius: '8px',
-    background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9',
-    fontSize: '13px', cursor: 'pointer', outline: 'none',
+    flex: 1, maxWidth: '360px', padding: '10px 14px', borderRadius: '10px',
+    background: '#ffffff', border: '1px solid #e2e8f0', color: '#1a1d26',
+    fontSize: '14px', cursor: 'pointer', outline: 'none', transition: 'all 0.2s',
   },
   clearBtn: {
-    padding: '6px 12px', borderRadius: '8px', background: 'transparent',
-    border: '1px solid #334155', color: '#94a3b8', fontSize: '12px',
-    cursor: 'pointer', whiteSpace: 'nowrap',
+    padding: '8px 16px', borderRadius: '10px', background: '#fef2f2',
+    border: '1px solid #fecaca', color: '#dc2626', fontSize: '13px',
+    cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s', fontWeight: 500,
   },
   messages: {
-    flex: 1, overflowY: 'auto', padding: '24px',
-    display: 'flex', flexDirection: 'column', gap: '16px',
+    flex: 1, overflowY: 'auto', padding: '32px',
+    display: 'flex', flexDirection: 'column', gap: '20px',
   },
   welcome: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -47,62 +48,66 @@ const s = {
     padding: '40px',
   },
   welcomeIcon: {
-    width: '64px', height: '64px', borderRadius: '16px',
-    background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
+    width: '80px', height: '80px', borderRadius: '20px',
+    background: 'linear-gradient(135deg, #6366f1, #8b5cf6, #d946ef)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 12px 40px rgba(139, 92, 246, 0.5)',
   },
-  welcomeTitle: { fontSize: '20px', fontWeight: 700, color: '#f1f5f9' },
-  welcomeDesc: { fontSize: '14px', color: '#64748b', maxWidth: '400px', lineHeight: '1.6' },
+  welcomeTitle: { fontSize: '28px', fontWeight: 700, color: '#1a1d26', letterSpacing: '-0.02em' },
+  welcomeDesc: { fontSize: '15px', color: '#64748b', maxWidth: '500px', lineHeight: '1.7' },
   suggestions: { display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginTop: '8px' },
   suggBtn: {
-    padding: '8px 14px', borderRadius: '20px', background: '#1e293b',
-    border: '1px solid #334155', color: '#94a3b8', fontSize: '13px',
-    cursor: 'pointer', transition: 'all 0.15s',
+    padding: '10px 18px', borderRadius: '12px', background: '#f5f3ff',
+    border: '1px solid #e9d5ff', color: '#7c3aed', fontSize: '13px',
+    cursor: 'pointer', transition: 'all 0.2s', fontWeight: 500,
   },
   msgRow: (isUser) => ({
     display: 'flex', gap: '12px', flexDirection: isUser ? 'row-reverse' : 'row',
     alignItems: 'flex-start',
   }),
   avatar: (isUser) => ({
-    width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+    width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: isUser ? '#1e3a5f' : 'linear-gradient(135deg, #38bdf8, #818cf8)',
+    background: isUser ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    boxShadow: isUser ? '0 4px 12px rgba(59, 130, 246, 0.3)' : '0 4px 12px rgba(139, 92, 246, 0.4)',
   }),
   bubble: (isUser) => ({
-    maxWidth: '70%', padding: '12px 16px', borderRadius: isUser ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-    background: isUser ? '#1e3a5f' : '#1e293b',
-    border: `1px solid ${isUser ? '#2563eb33' : '#334155'}`,
-    fontSize: '14px', lineHeight: '1.6', color: '#e2e8f0',
+    maxWidth: '70%', padding: '14px 18px', borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+    background: isUser ? 'linear-gradient(135deg, #dbeafe, #bfdbfe)' : '#ffffff',
+    border: `1px solid ${isUser ? '#93c5fd' : '#e2e8f0'}`,
+    fontSize: '14px', lineHeight: '1.7', color: '#1a1d26',
     whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
   }),
   typing: {
     display: 'flex', gap: '4px', alignItems: 'center', padding: '4px 0',
   },
   dot: (i) => ({
-    width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8',
+    width: '7px', height: '7px', borderRadius: '50%', background: '#8b5cf6',
     animation: `bounce 1.2s infinite`,
     animationDelay: `${i * 0.2}s`,
   }),
   inputArea: {
-    padding: '16px 24px', borderTop: '1px solid #1e293b',
+    padding: '20px 32px', borderTop: '1px solid #e2e8f0',
     display: 'flex', gap: '12px', alignItems: 'flex-end', flexShrink: 0,
-    background: '#0b1120',
+    background: '#ffffff', boxShadow: '0 -1px 3px rgba(0,0,0,0.04)',
   },
   textarea: {
-    flex: 1, padding: '12px 16px', borderRadius: '12px',
-    background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9',
+    flex: 1, padding: '14px 18px', borderRadius: '14px',
+    background: '#f8fafc', border: '1px solid #e2e8f0', color: '#1a1d26',
     fontSize: '14px', resize: 'none', outline: 'none', fontFamily: 'inherit',
-    lineHeight: '1.5', maxHeight: '120px', minHeight: '44px',
+    lineHeight: '1.6', maxHeight: '140px', minHeight: '50px', transition: 'all 0.2s',
   },
   sendBtn: (disabled) => ({
-    width: '44px', height: '44px', borderRadius: '10px', flexShrink: 0,
-    background: disabled ? '#1e293b' : 'linear-gradient(135deg, #38bdf8, #818cf8)',
+    width: '50px', height: '50px', borderRadius: '12px', flexShrink: 0,
+    background: disabled ? '#e2e8f0' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
     border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    transition: 'all 0.15s',
+    transition: 'all 0.2s', boxShadow: disabled ? 'none' : '0 4px 16px rgba(139, 92, 246, 0.4)',
   }),
   disclaimer: {
-    textAlign: 'center', fontSize: '11px', color: '#475569', padding: '8px 24px 0',
+    textAlign: 'center', fontSize: '12px', color: '#64748b', padding: '12px 32px 0',
+    background: '#fafbfc',
   },
 }
 
@@ -203,8 +208,17 @@ export default function ChatIA() {
         {messages.length > 0 && (
           <button onClick={clearChat} style={{
             display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '6px 12px', borderRadius: '8px', background: 'transparent',
-            border: '1px solid #334155', color: '#94a3b8', fontSize: '13px', cursor: 'pointer',
+            padding: '8px 16px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', fontSize: '13px', 
+            cursor: 'pointer', transition: 'all 0.2s', fontWeight: 500,
+          }}
+          onMouseEnter={e => {
+            e.target.style.background = '#fee2e2'
+            e.target.style.borderColor = '#fca5a5'
+          }}
+          onMouseLeave={e => {
+            e.target.style.background = '#fef2f2'
+            e.target.style.borderColor = '#fecaca'
           }}>
             <Trash2 size={14} /> Effacer
           </button>
@@ -231,9 +245,11 @@ export default function ChatIA() {
         )}
         {selectedPatient && (
           <span style={{
-            fontSize: '12px', color: '#38bdf8', background: '#0f2942',
-            padding: '4px 10px', borderRadius: '20px', border: '1px solid #1e3a5f',
+            fontSize: '12px', color: '#7c3aed', background: '#f5f3ff',
+            padding: '6px 14px', borderRadius: '10px', border: '1px solid #e9d5ff',
+            fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px',
           }}>
+            <Brain size={14} />
             Contexte : {selectedPatientName()}
           </span>
         )}
@@ -250,15 +266,23 @@ export default function ChatIA() {
               Sélectionnez un patient pour obtenir des réponses contextualisées à son dossier.
             </div>
             <div style={s.suggestions}>
-              {SUGGESTIONS.map(s => (
+              {SUGGESTIONS.map(sugg => (
                 <button
-                  key={s}
+                  key={sugg}
                   style={s.suggBtn}
-                  onClick={() => send(s)}
-                  onMouseEnter={e => e.target.style.borderColor = '#38bdf8'}
-                  onMouseLeave={e => e.target.style.borderColor = '#334155'}
+                  onClick={() => send(sugg)}
+                  onMouseEnter={e => {
+                    e.target.style.background = '#ede9fe'
+                    e.target.style.borderColor = '#c4b5fd'
+                    e.target.style.transform = 'translateY(-2px)'
+                  }}
+                  onMouseLeave={e => {
+                    e.target.style.background = '#f5f3ff'
+                    e.target.style.borderColor = '#e9d5ff'
+                    e.target.style.transform = 'translateY(0)'
+                  }}
                 >
-                  {s}
+                  {sugg}
                 </button>
               ))}
             </div>
@@ -314,8 +338,18 @@ export default function ChatIA() {
           style={s.sendBtn(!input.trim() || loading)}
           onClick={() => send()}
           disabled={!input.trim() || loading}
+          onMouseEnter={e => {
+            if (input.trim() && !loading) {
+              e.target.style.transform = 'translateY(-2px)'
+              e.target.style.boxShadow = '0 8px 24px rgba(139, 92, 246, 0.6)'
+            }
+          }}
+          onMouseLeave={e => {
+            e.target.style.transform = 'translateY(0)'
+            e.target.style.boxShadow = input.trim() && !loading ? '0 4px 16px rgba(139, 92, 246, 0.4)' : 'none'
+          }}
         >
-          <Send size={18} color={!input.trim() || loading ? '#475569' : '#fff'} />
+          <Send size={20} color={!input.trim() || loading ? '#475569' : '#fff'} />
         </button>
       </div>
     </div>

@@ -12,6 +12,9 @@ class Patient(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     medecin_id: Optional[str] = None
+    archived: Optional[bool] = False
+    archived_at: Optional[datetime] = None
+    archived_by: Optional[str] = None
 
     class Settings:
         name = "patients"
