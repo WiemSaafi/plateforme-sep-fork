@@ -2,7 +2,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Brain, Activity,
   Settings, LogOut, FlaskConical, FileText, Clock, Calendar, MessageSquare,
-  Newspaper, Heart, Sparkles, FolderOpen, CalendarCheck
+  Newspaper, Heart, Sparkles, FolderOpen, CalendarCheck, Inbox, Link
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import Logo from '../Logo'
@@ -13,6 +13,7 @@ const menuParRole = {
     { to: '/patients', icon: Users, label: 'Patients' },
     { to: '/visites', icon: Activity, label: 'Visites cliniques' },
     { to: '/irm', icon: Brain, label: 'IRM' },
+    { to: '/rapports-recus', icon: Inbox, label: 'Rapports reçus' },
     { to: '/agenda', icon: Calendar, label: 'Agenda' },
     { to: '/chat', icon: MessageSquare, label: 'Assistant IA', badge: 'IA' },
   ],
@@ -30,6 +31,7 @@ const menuParRole = {
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/admin/utilisateurs', icon: Users, label: 'Utilisateurs' },
     { to: '/admin/validations', icon: Clock, label: 'Validations' },
+    { to: '/admin/liaisons', icon: Link, label: 'Liaisons' },
     { to: '/admin/settings', icon: Settings, label: 'Paramètres' },
   ],
   patient: [

@@ -10,20 +10,22 @@ class TestsFonctionnels(BaseModel):
 
 class VisiteCreate(BaseModel):
     date_visite: date
+    motif: Optional[str] = None
     edss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
     tests_fonctionnels: Optional[TestsFonctionnels] = None
     notes: Optional[str] = Field(None, max_length=1000)
     medecin_id: Optional[str] = None
 
-    @field_validator("date_visite")
+    @field_validator("date_visite", mode="before")
     @classmethod
     def valider_date(cls, v):
-        if v > date.today():
-            raise ValueError("La date de visite ne peut pas etre dans le futur")
+        if isinstance(v, str) and 'T' in v:
+            v = v.split('T')[0]
         return v
 
 class VisiteUpdate(BaseModel):
     date_visite: Optional[date] = None
+    motif: Optional[str] = None
     edss_score: Optional[float] = Field(None, ge=0.0, le=10.0)
     tests_fonctionnels: Optional[TestsFonctionnels] = None
     notes: Optional[str] = Field(None, max_length=1000)

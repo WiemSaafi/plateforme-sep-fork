@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.database import connect_db
-from app.routers import patients, visites, irm, auth, admin, analyses, agenda, predictions, chat, dashboard, patient_portal, notifications, settings, public, news, rendez_vous, medecins, pdf_generator
+from app.routers import patients, visites, irm, auth, admin, analyses, agenda, predictions, chat, dashboard, patient_portal, notifications, settings, public, news, rendez_vous, medecins, pdf_generator, contrats
 
 
 @asynccontextmanager
@@ -43,6 +43,7 @@ app.include_router(news.router, prefix="/api", tags=["Actualités"])
 app.include_router(rendez_vous.router, prefix="/api", tags=["Rendez-vous"])
 app.include_router(medecins.router, prefix="/api", tags=["Médecins"])
 app.include_router(pdf_generator.router, prefix="/api", tags=["PDF"])
+app.include_router(contrats.router, prefix="/api", tags=["Contrats"])
 
 
 @app.get("/api/health")

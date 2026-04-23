@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Save, CheckCircle, Send, UserCheck } from 'lucide-react'
+import api from '../../services/api'
 
 const CONCLUSIONS = [
   'Pas de nouvelles lésions détectées',
@@ -29,8 +30,19 @@ export default function RapportDetail() {
     conclusion: irm.rapport?.conclusion || '',
     recommandations: irm.rapport?.recommandations || '',
   })
-  const [sauvegarde, setSauvegarde] = useState(false)
+  const [sauvegarde, setSauvegarde] = useState(!!irm.rapport)
   const [loading, setLoading] = useState(false)
+  const [medecins, setMedecins] = useState([])
+  const [selectedMedecin, setSelectedMedecin] = useState('')
+  const [envoyant, setEnvoyant] = useState(false)
+  const [envoye, setEnvoye] = useState(!!irm.envoi_medecin_id)
+  const [envoyeNom, setEnvoyeNom] = useState(irm.envoi_medecin_nom || '')
+
+  useEffect(() => {
+    api.get('/contrats/mes-medecins')
+      .then(r => setMedecins(r.data || []))
+      .catch(() => {})
+  }, [])
 
   const localisations = ['Périventriculaire', 'Sous-cortical', 'Cortical', 'Infratentoriel', 'Médullaire', 'Corpus callosum']
 
@@ -46,17 +58,27 @@ export default function RapportDetail() {
   const sauvegarder = async () => {
     setLoading(true)
     try {
-      await fetch(`/api/patients/${irm.patient_id}/irm/${irm.id}/rapport`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(rapport)
-      })
+      await api.post(`/patients/${irm.patient_id}/irm/${irm.id}/rapport`, rapport)
       setSauvegarde(true)
-      setTimeout(() => navigate(-1), 1500)
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const envoyerAuMedecin = async () => {
+    if (!selectedMedecin) return
+    setEnvoyant(true)
+    try {
+      await api.post(`/patients/${irm.patient_id}/irm/${irm.id}/envoyer`, { medecin_id: selectedMedecin })
+      const med = medecins.find(m => m.medecin_id === selectedMedecin)
+      setEnvoye(true)
+      setEnvoyeNom(med?.medecin_nom || 'le médecin')
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setEnvoyant(false)
     }
   }
 
@@ -223,12 +245,54 @@ export default function RapportDetail() {
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
           padding: '12px', borderRadius: '10px', border: 'none',
           background: sauvegarde ? '#22c55e' : '#0f172a',
-          color: 'white', cursor: loading ? 'not-allowed' : 'pointer',
+          color: 'white', cursor: (loading || sauvegarde) ? 'not-allowed' : 'pointer',
           fontWeight: 600, fontSize: '15px'
         }}>
           <Save size={18} />
-          {loading ? 'Sauvegarde...' : sauvegarde ? 'Sauvegardé !' : 'Sauvegarder le rapport'}
+          {loading ? 'Sauvegarde...' : sauvegarde ? 'Rapport sauvegardé ✓' : 'Sauvegarder le rapport'}
         </button>
+
+        {/* Envoyer au médecin — visible après sauvegarde */}
+        {sauvegarde && (
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <UserCheck size={18} color="#4f46e5" />
+              <span style={{ fontWeight: 700, fontSize: '15px' }}>Envoyer au médecin contracté</span>
+            </div>
+
+            {envoye ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                <CheckCircle size={16} />
+                <span style={{ fontSize: '14px', fontWeight: 500 }}>Rapport envoyé à Dr. {envoyeNom}</span>
+              </div>
+            ) : medecins.length === 0 ? (
+              <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
+                Aucun médecin contracté. Demandez à l'administrateur d'établir une liaison.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <select value={selectedMedecin} onChange={e => setSelectedMedecin(e.target.value)}
+                  style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none' }}>
+                  <option value="">Sélectionner un médecin</option>
+                  {medecins.map(m => (
+                    <option key={m.medecin_id} value={m.medecin_id}>Dr. {m.medecin_nom}</option>
+                  ))}
+                </select>
+                <button onClick={envoyerAuMedecin} disabled={!selectedMedecin || envoyant} style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '10px 20px', borderRadius: '8px', border: 'none',
+                  background: selectedMedecin ? '#4f46e5' : '#e2e8f0',
+                  color: selectedMedecin ? 'white' : '#94a3b8',
+                  cursor: selectedMedecin ? 'pointer' : 'not-allowed',
+                  fontWeight: 600, fontSize: '14px', whiteSpace: 'nowrap'
+                }}>
+                  <Send size={15} />
+                  {envoyant ? 'Envoi...' : 'Envoyer'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

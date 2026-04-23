@@ -107,15 +107,15 @@ export default function Login() {
           fontSize: '14px', color: '#6b7280', marginTop: '16px',
           textAlign: 'center', maxWidth: '380px', lineHeight: '1.7',
         }}>
-          Classification SEP • Prédiction de lésions • Suivi EDSS • Chat IA médical
+          Classification SEP • Prédiction de lésions • Chat IA médical
         </p>
 
         {/* Feature pills */}
         <div style={{ display: 'flex', gap: '8px', marginTop: '32px', flexWrap: 'wrap', justifyContent: 'center' }}>
           {[
-            { text: 'ResNet-50 · 99.35%', color: '#4f46e5', bg: '#eef2ff' },
-            { text: 'U-Net · Dice 0.82', color: '#0891b2', bg: '#e0f7fa' },
-            { text: 'Llama 3.3 70B', color: '#7c3aed', bg: '#f5f3ff' },
+            { text: 'Classification IA ', color: '#4f46e5', bg: '#eef2ff' },
+            { text: 'Segmentation IA ', color: '#0891b2', bg: '#e0f7fa' },
+            { text: 'Assistant IA SEP', color: '#7c3aed', bg: '#f5f3ff' },
           ].map(p => (
             <span key={p.text} style={{
               padding: '7px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,

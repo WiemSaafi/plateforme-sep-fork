@@ -9,9 +9,9 @@ MONGODB_URL = os.getenv("MONGODB_URL", "mongodb+srv://mllehadillajili_db_user:Sq
 
 async def connect_db():
     client = AsyncIOMotorClient(MONGODB_URL)
-    from app.models.documents import Patient, VisiteClinique, IRMScan, Utilisateur, AnalyseBiologique, Rappel
+    from app.models.documents import Patient, VisiteClinique, IRMScan, Utilisateur, AnalyseBiologique, Rappel, RendezVous, Contrat
     await init_beanie(
         database=client.sep_db,
-        document_models=[Patient, VisiteClinique, IRMScan, Utilisateur, AnalyseBiologique, Rappel]
+        document_models=[Patient, VisiteClinique, IRMScan, Utilisateur, AnalyseBiologique, Rappel, RendezVous, Contrat]
     )
     print("Connecte a MongoDB")

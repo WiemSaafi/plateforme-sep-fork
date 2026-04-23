@@ -16,6 +16,8 @@ import Resultats from './pages/laboratoire/Resultats'
 import AdminUtilisateurs from './pages/admin/AdminUtilisateurs'
 import AdminValidations from './pages/admin/AdminValidations'
 import AdminParametres from './pages/admin/AdminParametres'
+import AdminLiaisons from './pages/admin/AdminLiaisons'
+import RapportsRecus from './pages/medecin/RapportsRecus'
 import Visites from './pages/Visites'
 import Agenda from './pages/Agenda'
 import MesRapports from './pages/radiologue/MesRapports'
@@ -67,16 +69,20 @@ function AppRoutes() {
         <Route path="visites" element={<PrivateRoute roles={['medecin', 'admin']}><Visites /></PrivateRoute>} />
         {/* Radiologue */}
         <Route path="irm-queue" element={<PrivateRoute roles={['radiologue', 'admin']}><IRMQueue /></PrivateRoute>} />
-        <Route path="irm" element={<PrivateRoute roles={['radiologue', 'admin']}><IrmRadiologue /></PrivateRoute>} />
+        <Route path="irm" element={<PrivateRoute roles={['medecin', 'radiologue', 'admin']}><IrmRadiologue /></PrivateRoute>} />
         <Route path="rapports/:id" element={<PrivateRoute roles={['radiologue']}><RapportDetail /></PrivateRoute>} />
 
         {/* Laboratoire */}
         <Route path="analyses" element={<PrivateRoute roles={['laboratoire']}><Analyses /></PrivateRoute>} />
         <Route path="resultats" element={<PrivateRoute roles={['laboratoire']}><Resultats /></PrivateRoute>} />
 
+        {/* Médecin — rapports reçus */}
+        <Route path="rapports-recus" element={<PrivateRoute roles={['medecin', 'admin']}><RapportsRecus /></PrivateRoute>} />
+
         {/* Admin */}
         <Route path="admin/utilisateurs" element={<PrivateRoute roles={['admin']}><AdminUtilisateurs /></PrivateRoute>} />
         <Route path="admin/validations" element={<PrivateRoute roles={['admin']}><AdminValidations /></PrivateRoute>} />
+        <Route path="admin/liaisons" element={<PrivateRoute roles={['admin']}><AdminLiaisons /></PrivateRoute>} />
         <Route path="admin/settings" element={<PrivateRoute roles={['admin']}><AdminParametres /></PrivateRoute>} />
 
         {/* Patient */}

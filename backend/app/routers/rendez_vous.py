@@ -195,69 +195,92 @@ def send_appointment_email(patient_email: str, patient_name: str, medecin_name: 
         print(f"Erreur lors de l'envoi de l'email: {e}")
         return False
 
+def serialize_rdv(rdv) -> dict:
+    return {
+        "id": str(rdv.id),
+        "patient_id": rdv.patient_id,
+        "medecin_id": rdv.medecin_id,
+        "date": rdv.date,
+        "heure": rdv.heure,
+        "motif": rdv.motif,
+        "message": rdv.message,
+        "statut": rdv.statut,
+        "patient_nom": rdv.patient_nom,
+        "medecin_nom": rdv.medecin_nom,
+        "created_at": rdv.created_at,
+    }
+
 @router.post("/rendez-vous")
 async def create_rendez_vous(data: RendezVousCreate, current_user=Depends(get_current_user)):
-    """Créer une demande de rendez-vous et envoyer un email de confirmation"""
+    from app.models.documents import Patient, Utilisateur, RendezVous
+    from beanie import PydanticObjectId
+
+    medecin = await Utilisateur.get(PydanticObjectId(data.medecin_id))
+    if not medecin:
+        raise HTTPException(status_code=404, detail="Médecin non trouvé")
+
+    patient_email = current_user.email
+    patient_name = f"{current_user.prenom} {current_user.nom}"
     try:
-        from app.models.documents import Patient, Utilisateur
-        from beanie import PydanticObjectId
-        
-        # Récupérer les informations du médecin
-        medecin = await Utilisateur.get(PydanticObjectId(data.medecin_id))
-        if not medecin:
-            raise HTTPException(status_code=404, detail="Médecin non trouvé")
-        
-        # Essayer de récupérer le patient, sinon utiliser les infos de l'utilisateur connecté
-        patient = None
-        try:
-            patient = await Patient.get(PydanticObjectId(data.patient_id))
-        except:
-            pass
-        
-        # Si le patient existe dans la collection patients
+        patient = await Patient.get(PydanticObjectId(data.patient_id))
         if patient:
-            patient_email = patient.contact.get('email') if patient.contact else None
+            patient_email = (patient.contact or {}).get('email') or current_user.email
             patient_name = f"{patient.prenom} {patient.nom}"
-        else:
-            # Sinon, utiliser les informations de l'utilisateur connecté
-            patient_email = current_user.email
-            patient_name = f"{current_user.prenom} {current_user.nom}"
-        
-        if not patient_email:
-            raise HTTPException(status_code=400, detail="Aucun email disponible pour l'envoi de confirmation")
-        
-        medecin_name = f"{medecin.prenom} {medecin.nom}"
-        
-        # Envoyer l'email de confirmation
+    except Exception:
+        pass
+
+    medecin_name = f"{medecin.prenom} {medecin.nom}"
+
+    rdv = RendezVous(
+        patient_id=data.patient_id,
+        medecin_id=data.medecin_id,
+        date=data.date,
+        heure=data.heure,
+        motif=data.motif,
+        message=data.message,
+        patient_nom=patient_name,
+        medecin_nom=medecin_name,
+    )
+    await rdv.insert()
+
+    email_sent = False
+    try:
         email_sent = send_appointment_email(
             patient_email=patient_email,
             patient_name=patient_name,
             medecin_name=medecin_name,
             date=data.date,
             heure=data.heure,
-            motif=data.motif
+            motif=data.motif,
         )
-        
-        # Ici, vous pouvez sauvegarder le rendez-vous dans la base de données
-        # Par exemple, créer un document RendezVous avec les informations
-        
-        return {
-            "message": "Demande de rendez-vous enregistrée avec succès",
-            "email_sent": email_sent,
-            "rendez_vous": {
-                "patient_id": data.patient_id,
-                "medecin_id": data.medecin_id,
-                "date": data.date,
-                "heure": data.heure,
-                "motif": data.motif,
-                "status": "en_attente"
-            }
-        }
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"Erreur lors de la création du rendez-vous: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la création du rendez-vous: {str(e)}")
+        print(f"Email non envoyé: {e}")
+
+    return {
+        "message": "Demande de rendez-vous enregistrée avec succès",
+        "email_sent": email_sent,
+        "rendez_vous": serialize_rdv(rdv),
+    }
+
+@router.get("/rendez-vous")
+async def get_mes_rendez_vous(current_user=Depends(get_current_user)):
+    from app.models.documents import RendezVous
+    rdvs = await RendezVous.find(RendezVous.patient_id == str(current_user.id)).sort("-created_at").to_list()
+    return [serialize_rdv(r) for r in rdvs]
+
+@router.get("/rendez-vous/medecin")
+async def get_rdv_medecin(current_user=Depends(get_current_user)):
+    from app.models.documents import RendezVous
+    rdvs = await RendezVous.find(RendezVous.medecin_id == str(current_user.id)).sort("-created_at").to_list()
+    return [serialize_rdv(r) for r in rdvs]
+
+@router.patch("/rendez-vous/{rdv_id}/statut")
+async def update_statut_rdv(rdv_id: str, body: dict, current_user=Depends(get_current_user)):
+    from app.models.documents import RendezVous
+    from beanie import PydanticObjectId
+    rdv = await RendezVous.get(PydanticObjectId(rdv_id))
+    if not rdv:
+        raise HTTPException(status_code=404, detail="Rendez-vous non trouvé")
+    rdv.statut = body.get("statut", rdv.statut)
+    await rdv.save()
+    return serialize_rdv(rdv)

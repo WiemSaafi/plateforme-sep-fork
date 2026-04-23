@@ -10,6 +10,7 @@ def serialize(visite: VisiteClinique) -> dict:
         "id": str(visite.id),
         "patient_id": visite.patient_id,
         "date_visite": visite.date_visite,
+        "motif": visite.motif,
         "edss_score": visite.edss_score,
         "tests_fonctionnels": visite.tests_fonctionnels,
         "notes": visite.notes,
@@ -67,6 +68,7 @@ async def create_visite(patient_id: str, data: VisiteCreate):
     visite = VisiteClinique(
         patient_id=patient_id,
         date_visite=data.date_visite,
+        motif=data.motif,
         edss_score=data.edss_score,
         tests_fonctionnels=data.tests_fonctionnels.model_dump() if data.tests_fonctionnels else {},
         notes=data.notes,

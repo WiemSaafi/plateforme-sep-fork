@@ -23,13 +23,18 @@ def serialize(irm: IRMScan) -> dict:
         "patient_id": irm.patient_id,
         "visite_id": irm.visite_id,
         "fichier_path": irm.fichier_path,
-        "fichier_url": irm.fichier_path,  # Alias pour compatibilité frontend
-        "chemin_fichier": irm.fichier_path,  # Alias pour compatibilité frontend
+        "fichier_url": irm.fichier_path,
+        "chemin_fichier": irm.fichier_path,
         "sequence_type": irm.sequence_type,
         "format_fichier": irm.metadata_dicom.get("format"),
         "metadata": irm.metadata_dicom,
         "statut": irm.statut,
         "uploaded_at": irm.uploaded_at,
+        "rapport": irm.rapport,
+        "radiologue_id": irm.radiologue_id,
+        "radiologue_nom": irm.radiologue_nom,
+        "envoi_medecin_id": irm.envoi_medecin_id,
+        "envoye_at": irm.envoye_at,
     }
 
 def extraire_metadata_nii(contenu: bytes, nom_fichier: str) -> dict:
@@ -217,14 +222,33 @@ async def delete_irm(patient_id: str, irm_id: str):
     return {"message": "IRM supprimee avec succes"}
 # ─── POST ajouter un rapport radiologique ────────────────────────────
 @router.post("/{patient_id}/irm/{irm_id}/rapport")
-async def ajouter_rapport(patient_id: str, irm_id: str, rapport: dict):
+async def ajouter_rapport(patient_id: str, irm_id: str, rapport: dict, current_user=Depends(get_current_user)):
     irm = await IRMScan.get(irm_id)
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvee")
     irm.rapport = rapport
     irm.statut = "analysee"
+    irm.radiologue_id = str(current_user.id)
+    irm.radiologue_nom = f"{current_user.prenom} {current_user.nom}"
     await irm.save()
     return {"message": "Rapport sauvegarde avec succes", "irm_id": irm_id}
+
+# ─── POST envoyer le rapport à un médecin ────────────────────────────
+@router.post("/{patient_id}/irm/{irm_id}/envoyer")
+async def envoyer_rapport(patient_id: str, irm_id: str, body: dict, current_user=Depends(get_current_user)):
+    from datetime import datetime
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+    if not irm.rapport:
+        raise HTTPException(status_code=400, detail="Aucun rapport à envoyer. Rédigez d'abord le rapport.")
+    medecin_id = body.get("medecin_id")
+    if not medecin_id:
+        raise HTTPException(status_code=400, detail="medecin_id obligatoire")
+    irm.envoi_medecin_id = medecin_id
+    irm.envoye_at = datetime.utcnow()
+    await irm.save()
+    return {"message": "Rapport envoyé au médecin", "irm_id": irm_id}
 
 # ─── GET rapport d'une IRM ────────────────────────────────────────────
 @router.get("/{patient_id}/irm/{irm_id}/rapport")
@@ -235,6 +259,21 @@ async def get_rapport(patient_id: str, irm_id: str):
     if not irm.rapport:
         raise HTTPException(status_code=404, detail="Aucun rapport pour cette IRM")
     return irm.rapport
+
+# ─── GET rapports reçus (pour le médecin) ────────────────────────────
+@router.get("/rapports/recus")
+async def get_rapports_recus(current_user=Depends(get_current_user)):
+    if current_user.role not in ["medecin", "admin"]:
+        raise HTTPException(403, "Accès réservé au médecin")
+    irms = await IRMScan.find(IRMScan.envoi_medecin_id == str(current_user.id)).to_list()
+    result = []
+    for irm in irms:
+        patient = await Patient.get(irm.patient_id)
+        d = serialize(irm)
+        d["patient_nom"] = f"{patient.prenom} {patient.nom}" if patient else "Inconnu"
+        result.append(d)
+    result.sort(key=lambda x: x["envoye_at"] or x["uploaded_at"], reverse=True)
+    return result
 
 # ─── GET toutes les IRM (pour le radiologue) ─────────────────────────
 @router.get("/irm/toutes")

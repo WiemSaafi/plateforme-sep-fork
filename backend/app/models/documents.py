@@ -22,6 +22,7 @@ class Patient(Document):
 class VisiteClinique(Document):
     patient_id: str
     date_visite: date
+    motif: Optional[str] = None
     edss_score: Optional[float] = None
     tests_fonctionnels: Optional[dict] = {}
     notes: Optional[str] = None
@@ -40,7 +41,12 @@ class IRMScan(Document):
     metadata_dicom: dict = {}
     statut: str = "pending"
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
-    rapport: Optional[dict] = None  # ← ajoute cette ligne
+    rapport: Optional[dict] = None
+    radiologue_id: Optional[str] = None
+    radiologue_nom: Optional[str] = None
+    envoi_medecin_id: Optional[str] = None
+    envoye_at: Optional[datetime] = None
+
     class Settings:
         name = "irm_scans"
 
@@ -79,4 +85,29 @@ class Rappel(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
-        name = "rappels"                  
+        name = "rappels"
+
+class Contrat(Document):
+    radiologue_id: str
+    medecin_id: str
+    radiologue_nom: Optional[str] = None
+    medecin_nom: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "contrats"
+
+class RendezVous(Document):
+    patient_id: str
+    medecin_id: str
+    date: str
+    heure: str
+    motif: str
+    message: Optional[str] = None
+    statut: str = "en_attente"  # en_attente | confirme | annule
+    patient_nom: Optional[str] = None
+    medecin_nom: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "rendez_vous"

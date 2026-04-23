@@ -81,22 +81,36 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
         name: `${sequenceType || 'IRM'}.nii`,
         colormap: 'gray',
         opacity: 1,
-        cal_min: 0,
-        cal_max: 255,
         headers: { Authorization: `Bearer ${token}` }
       }])
+
+      // Auto-fenêtrage : percentiles 2%-98% pour éviter la saturation
+      const vol0 = nv.volumes[0]
+      if (vol0) {
+        const img = vol0.img
+        const sorted = Float32Array.from(img).filter(v => v > 0).sort()
+        if (sorted.length > 0) {
+          const lo = sorted[Math.floor(sorted.length * 0.02)]
+          const hi = sorted[Math.floor(sorted.length * 0.98)]
+          vol0.cal_min = lo
+          vol0.cal_max = hi
+          nv.updateGLVolume()
+        }
+      }
 
       // Configurer le mode
       if (mode === '3D') {
         nv.setSliceType(nv.sliceTypeRender)
       } else {
-        nv.setSliceType(nv.sliceTypeMultiplanar)
+        nv.setSliceType(nv.sliceTypeAxial)
       }
 
       const vol = nv.volumes[0]
       if (vol) {
-        setTotalSlices(vol.dims[3] || 0)
-        setSlice(Math.floor((vol.dims[3] || 0) / 2))
+        // dims[0]=nb_dims, dims[1]=x, dims[2]=y, dims[3]=z (coupes axiales)
+        const nz = vol.dims[3] || vol.dims[1] || 0
+        setTotalSlices(nz)
+        setSlice(Math.floor(nz / 2))
       }
 
       setLoading(false)

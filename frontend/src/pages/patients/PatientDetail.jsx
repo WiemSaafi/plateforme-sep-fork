@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, User, Calendar, Phone, Mail, Plus, Brain, Activity, Image, Sparkles, Upload, FileText, ChevronRight } from 'lucide-react'
+import { ArrowLeft, User, Calendar, Phone, Mail, Plus, Brain, Activity, Image, Sparkles, Upload, FileText, ChevronRight, Maximize2, ChevronLeft, Loader } from 'lucide-react'
 import { patientService } from '../../services/patientService'
 import GraphiquesIA from '../../components/prediction/GraphiquesIA'
 import ViewerIRM from '../../components/irm/ViewerIRM'
+import ViewerCompletIA from '../../components/irm/ViewerCompletIA'
 
 const TABS = [
   { key: 'Informations', icon: User, color: '#4f46e5' },
@@ -12,8 +13,73 @@ const TABS = [
   { key: 'Prédiction IA', icon: Sparkles, color: '#7c3aed' },
 ]
 
+function ViewerInline({ irmId }) {
+  const token = localStorage.getItem('token')
+  const headers = { Authorization: `Bearer ${token}` }
+  const [nCoupes, setNCoupes] = useState(0)
+  const [slice, setSlice] = useState(0)
+  const [src, setSrc] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const debounceRef = useRef(null)
+
+  useEffect(() => {
+    fetch(`/api/predictions/viewer/${irmId}/info`, { headers })
+      .then(r => r.json())
+      .then(d => { setNCoupes(d.n_coupes || 0); setSlice(Math.floor((d.n_coupes || 0) / 2)) })
+      .catch(() => {})
+  }, [irmId])
+
+  useEffect(() => {
+    if (!nCoupes) return
+    setLoading(true)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
+        .then(r => r.json())
+        .then(d => { setSrc(d.image); setLoading(false) })
+        .catch(() => setLoading(false))
+    }, 150)
+    return () => clearTimeout(debounceRef.current)
+  }, [irmId, slice, nCoupes])
+
+  return (
+    <div style={{ background: '#0f172a', borderRadius: '10px', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', background: '#000', minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {loading
+          ? <Loader size={24} color="#38bdf8" style={{ animation: 'spin 1s linear infinite' }} />
+          : src
+            ? <img src={src} alt="IRM" style={{ width: '100%', maxHeight: '360px', objectFit: 'contain', imageRendering: 'pixelated', display: 'block' }} />
+            : <span style={{ color: '#475569', fontSize: '13px' }}>Chargement…</span>
+        }
+        <span style={{
+          position: 'absolute', top: '8px', left: '8px',
+          background: 'rgba(0,0,0,0.65)', color: '#94a3b8',
+          fontSize: '11px', fontWeight: 600, padding: '3px 9px', borderRadius: '5px',
+        }}>
+          Coupe {slice + 1} / {nCoupes}
+        </span>
+      </div>
+      <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button onClick={() => setSlice(s => Math.max(0, s - 1))} disabled={slice === 0}
+          style={{ background: 'transparent', border: 'none', color: slice === 0 ? '#1e293b' : '#64748b', cursor: slice === 0 ? 'not-allowed' : 'pointer', padding: '2px' }}>
+          <ChevronLeft size={16} />
+        </button>
+        <input type="range" min={0} max={Math.max(0, nCoupes - 1)} value={slice}
+          onChange={e => setSlice(Number(e.target.value))}
+          style={{ flex: 1, accentColor: '#38bdf8', cursor: 'pointer' }} />
+        <button onClick={() => setSlice(s => Math.min(nCoupes - 1, s + 1))} disabled={slice >= nCoupes - 1}
+          style={{ background: 'transparent', border: 'none', color: slice >= nCoupes - 1 ? '#1e293b' : '#64748b', cursor: slice >= nCoupes - 1 ? 'not-allowed' : 'pointer', padding: '2px' }}>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  )
+}
+
 function CarteIRM({ irm, patientId }) {
   const [showViewer, setShowViewer] = useState(false)
+  const [mode, setMode] = useState('2d') // '2d' | '3d'
 
   return (
     <div className="glass-card-glow" style={{ overflow: 'hidden' }}>
@@ -50,10 +116,7 @@ function CarteIRM({ irm, patientId }) {
             { label: 'Hauteur', value: `${irm.metadata.hauteur ?? '—'}px` },
             { label: 'Taille', value: `${irm.metadata.taille_mb ?? '—'} MB` },
           ].map(m => (
-            <div key={m.label} style={{
-              background: '#f8f9fc', borderRadius: '8px', padding: '10px',
-              textAlign: 'center',
-            }}>
+            <div key={m.label} style={{ background: '#f8f9fc', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
               <p style={{ fontWeight: 600, fontSize: '13px', color: '#1a1d26', margin: 0 }}>{m.value}</p>
               <p style={{ fontSize: '11px', color: '#9ca3b0', margin: '2px 0 0' }}>{m.label}</p>
             </div>
@@ -61,7 +124,7 @@ function CarteIRM({ irm, patientId }) {
         </div>
       )}
 
-      <div style={{ padding: '0 20px 16px' }}>
+      <div style={{ padding: '0 20px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
           onClick={() => setShowViewer(!showViewer)}
           style={{
@@ -76,15 +139,34 @@ function CarteIRM({ irm, patientId }) {
           <Image size={14} />
           {showViewer ? "Masquer le viewer" : "Visualiser l'IRM"}
         </button>
+
+        {showViewer && (
+          <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+            {[{ key: '2d', label: '2D Coupes' }, { key: '3d', label: '3D Complet' }].map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setMode(opt.key)}
+                style={{
+                  padding: '5px 12px', borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: 600,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  background: mode === opt.key ? '#fff' : 'transparent',
+                  color: mode === opt.key ? '#4f46e5' : '#64748b',
+                  boxShadow: mode === opt.key ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {showViewer && (
         <div style={{ padding: '0 20px 20px' }}>
-          <ViewerIRM
-            patientId={patientId}
-            irmId={irm.id}
-            sequenceType={irm.sequence_type}
-          />
+          {mode === '2d'
+            ? <ViewerInline irmId={irm.id} />
+            : <ViewerIRM patientId={patientId} irmId={irm.id} sequenceType={irm.sequence_type} />
+          }
         </div>
       )}
     </div>
@@ -113,6 +195,11 @@ export default function PatientDetail() {
   const [lstmLoading, setLstmLoading] = useState(false)
   const [lstmResultat, setLstmResultat] = useState(null)
   const [lstmErreur, setLstmErreur] = useState(null)
+
+  // Viewer IRM complet
+  const [viewerIrmId, setViewerIrmId] = useState(null)
+  const [predIrmId, setPredIrmId] = useState(null)
+  const [lstmIrmId, setLstmIrmId] = useState(null)
 
   // Formulaire visite
   const [showVisiteForm, setShowVisiteForm] = useState(false)
@@ -214,6 +301,7 @@ export default function PatientDetail() {
     const lancerPrediction = async (irmId) => {
       setPredLoading(true)
       setPredErreur(null)
+      setPredIrmId(irmId)
       try {
         const res = await fetch(`/api/predictions/prediction/${irmId}`, {
           method: 'POST',
@@ -231,6 +319,7 @@ export default function PatientDetail() {
     const lancerLSTM = async (irmId) => {
       setLstmLoading(true)
       setLstmErreur(null)
+      setLstmIrmId(irmId)
       try {
         const res = await fetch(`/api/predictions/temporal/${irmId}`, {
           method: 'POST',
@@ -271,6 +360,7 @@ export default function PatientDetail() {
   )
 
   return (
+    <>
     <div className="animate-fadeIn" style={{ color: '#1a1d26' }}>
 
       {/* ── Header Patient ─────────────────────────────────────── */}
@@ -725,7 +815,7 @@ export default function PatientDetail() {
                   </h3>
                 </div>
                 <p style={{ fontSize: '12px', color: '#9ca3b0', marginLeft: '38px', marginBottom: '16px' }}>
-                  ResNet-50 Transfer Learning • Accuracy 99.35% • Sensibilité 99.35%
+                  Analyse automatique par IA • Précision 99.35%
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -785,8 +875,8 @@ export default function PatientDetail() {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
                       <div style={{ textAlign: 'center', padding: '8px', background: 'white', borderRadius: '8px' }}>
-                        <p style={{ fontSize: '11px', color: '#9ca3b0', margin: 0 }}>Modèle</p>
-                        <p style={{ fontSize: '12px', fontWeight: 600, color: '#1a1d26', margin: '2px 0 0' }}>ResNet-50 TL</p>
+                        <p style={{ fontSize: '11px', color: '#9ca3b0', margin: 0 }}>Analyse</p>
+                        <p style={{ fontSize: '12px', fontWeight: 600, color: '#1a1d26', margin: '2px 0 0' }}>Classification IA</p>
                       </div>
                       <div style={{ textAlign: 'center', padding: '8px', background: 'white', borderRadius: '8px' }}>
                         <p style={{ fontSize: '11px', color: '#9ca3b0', margin: 0 }}>Performance</p>
@@ -811,7 +901,7 @@ export default function PatientDetail() {
                   </h3>
                 </div>
                 <p style={{ fontSize: '12px', color: '#9ca3b0', marginLeft: '38px', marginBottom: '16px' }}>
-                  U-Net 2 canaux • Dice 0.8215 • Compare 2 IRM et détecte les nouvelles lésions
+                  Analyse par IA • Compare 2 IRM et détecte les nouvelles lésions
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -889,21 +979,54 @@ export default function PatientDetail() {
                       </div>
                     </div>
 
+                    {predIrmId && (
+                      <button
+                        onClick={() => setViewerIrmId(predIrmId)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                          background: 'linear-gradient(135deg, #1e293b, #334155)',
+                          color: '#e2e8f0', fontWeight: 600, fontSize: '13px', width: '100%',
+                          justifyContent: 'center', transition: 'all 0.2s',
+                        }}
+                      >
+                        <Maximize2 size={15} /> Voir l'IRM complète (toutes les coupes)
+                      </button>
+                    )}
+
                     {predResultat.images_lesions && predResultat.images_lesions.length > 0 && (
                       <div>
                         <p style={{ fontSize: '13px', fontWeight: 600, color: '#1a1d26', marginBottom: '10px' }}>
                           🔴 Nouvelles lésions détectées
                         </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {predResultat.images_lesions.map((item, i) => (
-                            <div key={i} style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #1f2937', background: '#000' }}>
-                              <img src={item.image} alt={`Coupe ${item.coupe}`}
-                                style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
-                              <div style={{ padding: '6px 10px', background: '#111827', display: 'flex', justifyContent: 'space-between' }}>
+                            <div key={i} style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #1f2937', background: '#111827' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                                <div style={{ position: 'relative' }}>
+                                  <img src={item.image_originale || item.image} alt={`Original coupe ${item.coupe}`}
+                                    style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
+                                  <span style={{
+                                    position: 'absolute', top: '6px', left: '6px',
+                                    background: 'rgba(0,0,0,0.7)', color: '#e2e8f0',
+                                    fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
+                                  }}>IRM originale</span>
+                                </div>
+                                <div style={{ position: 'relative', borderLeft: '1px solid #374151' }}>
+                                  <img src={item.image} alt={`Segmentation coupe ${item.coupe}`}
+                                    style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
+                                  <span style={{
+                                    position: 'absolute', top: '6px', left: '6px',
+                                    background: 'rgba(239,68,68,0.8)', color: '#fff',
+                                    fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
+                                  }}>Lésions IA</span>
+                                </div>
+                              </div>
+                              <div style={{ padding: '6px 10px', background: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: '11px', color: '#9ca3af' }}>Coupe {item.coupe}</span>
                                 {item.n_lesions > 0
-                                  ? <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>{item.n_lesions}px</span>
-                                  : <span style={{ fontSize: '11px', color: '#4ade80' }}>✓</span>
+                                  ? <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>🔴 {item.n_lesions} px détectés</span>
+                                  : <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ Aucune lésion</span>
                                 }
                               </div>
                             </div>
@@ -925,12 +1048,9 @@ export default function PatientDetail() {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>3</span>
                   <h3 style={{ fontWeight: 700, fontSize: '15px', color: '#1a1d26', margin: 0 }}>
-                    Prédiction Temporelle — ConvLSTM
+                    Prédiction Temporelle — Future Lésions
                   </h3>
                 </div>
-                <p style={{ fontSize: '12px', color: '#9ca3b0', marginLeft: '38px', marginBottom: '4px' }}>
-                  ConvLSTM • Dice 0.7394 • Utilise 3 IRM consécutives pour prédire T4
-                </p>
                 <p style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '38px', marginBottom: '16px' }}>
                   ⚠️ Nécessite au moins 3 IRM FLAIR du même patient
                 </p>
@@ -1011,21 +1131,54 @@ export default function PatientDetail() {
                       </div>
                     </div>
 
+                    {lstmIrmId && (
+                      <button
+                        onClick={() => setViewerIrmId(lstmIrmId)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                          background: 'linear-gradient(135deg, #1e293b, #334155)',
+                          color: '#e2e8f0', fontWeight: 600, fontSize: '13px', width: '100%',
+                          justifyContent: 'center', transition: 'all 0.2s',
+                        }}
+                      >
+                        <Maximize2 size={15} /> Voir l'IRM complète (toutes les coupes)
+                      </button>
+                    )}
+
                     {lstmResultat.images_lesions && lstmResultat.images_lesions.length > 0 && (
                       <div>
                         <p style={{ fontSize: '13px', fontWeight: 600, color: '#1a1d26', marginBottom: '10px' }}>
                           🔴 Lésions futures prédites (T4)
                         </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {lstmResultat.images_lesions.map((item, i) => (
-                            <div key={i} style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #1f2937', background: '#000' }}>
-                              <img src={item.image} alt={`Coupe ${item.coupe}`}
-                                style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
-                              <div style={{ padding: '6px 10px', background: '#111827', display: 'flex', justifyContent: 'space-between' }}>
+                            <div key={i} style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #1f2937', background: '#111827' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                                <div style={{ position: 'relative' }}>
+                                  <img src={item.image_originale || item.image} alt={`Original coupe ${item.coupe}`}
+                                    style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
+                                  <span style={{
+                                    position: 'absolute', top: '6px', left: '6px',
+                                    background: 'rgba(0,0,0,0.7)', color: '#e2e8f0',
+                                    fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
+                                  }}>IRM T3 (réelle)</span>
+                                </div>
+                                <div style={{ position: 'relative', borderLeft: '1px solid #374151' }}>
+                                  <img src={item.image} alt={`Prédiction coupe ${item.coupe}`}
+                                    style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
+                                  <span style={{
+                                    position: 'absolute', top: '6px', left: '6px',
+                                    background: 'rgba(124,58,237,0.85)', color: '#fff',
+                                    fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
+                                  }}>Lésions T4 prédites</span>
+                                </div>
+                              </div>
+                              <div style={{ padding: '6px 10px', background: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: '11px', color: '#9ca3af' }}>Coupe {item.coupe}</span>
                                 {item.n_lesions > 0
-                                  ? <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>{item.n_lesions}px</span>
-                                  : <span style={{ fontSize: '11px', color: '#4ade80' }}>✓</span>
+                                  ? <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>🔴 {item.n_lesions} px prédits</span>
+                                  : <span style={{ fontSize: '11px', color: '#4ade80' }}>✓ Aucune lésion prédite</span>
                                 }
                               </div>
                             </div>
@@ -1045,5 +1198,13 @@ export default function PatientDetail() {
         </div>
       )}
     </div>
+
+    {viewerIrmId && (
+      <ViewerCompletIA
+        irmId={viewerIrmId}
+        onClose={() => setViewerIrmId(null)}
+      />
+    )}
+    </>
   )
 }

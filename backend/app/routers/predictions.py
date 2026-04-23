@@ -7,8 +7,8 @@ import os
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CHECKPOINT_CLS  = os.path.join(BASE_DIR, "ai", "checkpoints", "resnet_classifier 1.pth")
-CHECKPOINT_PRED = os.path.join(BASE_DIR, "ai", "checkpoints", "predictor_lesions_v2 1.pth")
+CHECKPOINT_CLS  = os.path.join(BASE_DIR, "ai", "checkpoints", "resnet_classifier.pth")
+CHECKPOINT_PRED = os.path.join(BASE_DIR, "ai", "checkpoints", "predictor_lesions_v2.pth")
 CHECKPOINT_LSTM = os.path.join(BASE_DIR, "ai", "checkpoints", "convlstm_predictor_aug.pth")
 
 _cls_cache  = None
@@ -136,13 +136,33 @@ async def classifier_sep_sain(irm_id: str, current_user=Depends(get_current_user
         model, device = cls
         data = _charger_volume(chemin)
         n = data.shape[2] if len(data.shape) == 3 else 1
-        indices = np.linspace(n//4, 3*n//4, 5, dtype=int)
 
-        coupes = [_prep_coupe(data, int(idx), size=224) for idx in indices]
-        tensor = torch.tensor(np.stack(coupes)).unsqueeze(1).unsqueeze(0).to(device)
+        # Sélection des 5 coupes avec le plus de signal hyperintense (proxy lésions FLAIR)
+        # Simule la sélection par masque utilisée à l'entraînement
+        seuil = data.mean() + 1.5 * data.std()
+        scores_coupes = []
+        for i in range(n):
+            coupe = data[:, :, i]
+            scores_coupes.append((float((coupe > seuil).sum()), i))
+        scores_coupes.sort(reverse=True)
+        indices_actifs = [s[1] for s in scores_coupes[:5]]
 
-        with torch.no_grad():
-            score = model(tensor).item()
+        # Évaluer aussi plusieurs fenêtres uniformes et prendre le max
+        indices_uniform = np.linspace(0, n - 1, 20, dtype=int).tolist()
+        tous_indices = list(set(indices_actifs + indices_uniform))
+
+        # Découper en batches de 5 et prendre le score max
+        scores_batches = []
+        for start in range(0, len(tous_indices), 5):
+            batch_idx = tous_indices[start:start + 5]
+            while len(batch_idx) < 5:
+                batch_idx.append(batch_idx[-1])
+            coupes = [_prep_coupe(data, int(idx), size=224) for idx in batch_idx]
+            tensor_b = torch.tensor(np.stack(coupes)).unsqueeze(1).unsqueeze(0).to(device)
+            with torch.no_grad():
+                scores_batches.append(model(tensor_b).item())
+
+        score = max(scores_batches)
 
         diagnostic = "SEP Détectée" if score > 0.5 else "Sain"
         confiance = score if score > 0.5 else 1 - score
@@ -269,9 +289,15 @@ async def predire_lesions_futures(
             buffer = io.BytesIO()
             Image.fromarray(img_rgb.astype(np.uint8)).save(buffer, format='PNG')
             img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+            orig_buffer = io.BytesIO()
+            Image.fromarray(t1_uint8).save(orig_buffer, format='PNG')
+            orig_b64 = base64.b64encode(orig_buffer.getvalue()).decode('utf-8')
+
             images_base64.append({
                 "coupe": int(idx),
                 "image": f"data:image/png;base64,{img_b64}",
+                "image_originale": f"data:image/png;base64,{orig_b64}",
                 "n_lesions": int(masque_bin.sum())
             })
 
@@ -426,9 +452,15 @@ async def predire_temporal(
             buffer = io.BytesIO()
             Image.fromarray(img_rgb.astype(np.uint8)).save(buffer, format='PNG')
             img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+            orig_buffer = io.BytesIO()
+            Image.fromarray(t3_uint8).save(orig_buffer, format='PNG')
+            orig_b64 = base64.b64encode(orig_buffer.getvalue()).decode('utf-8')
+
             images_base64.append({
                 "coupe": int(idx),
                 "image": f"data:image/png;base64,{img_b64}",
+                "image_originale": f"data:image/png;base64,{orig_b64}",
                 "n_lesions": int(masque_bin.sum())
             })
 
@@ -546,3 +578,106 @@ async def get_lesions_3d(irm_id: str, current_user=Depends(get_current_user)):
         import traceback
         traceback.print_exc()
         raise HTTPException(500, f"Erreur 3D : {str(e)}")
+
+
+# ══════════════════════════════════════════════════════
+# VIEWER IRM COMPLET — Coupes individuelles
+# ══════════════════════════════════════════════════════
+
+@router.get("/viewer/{irm_id}/info")
+async def viewer_info(irm_id: str, current_user=Depends(get_current_user)):
+    irm = await IRMScan.get(irm_id)
+    if not irm:
+        raise HTTPException(404, "IRM non trouvée")
+    chemin = _resoudre_chemin(irm)
+    if not chemin:
+        raise HTTPException(404, "Fichier IRM introuvable")
+    import nibabel as nib
+    shape = nib.load(chemin).shape
+    n_coupes = int(shape[2]) if len(shape) >= 3 else 1
+    return {"n_coupes": n_coupes}
+
+
+@router.get("/viewer/{irm_id}/coupe/{idx}")
+async def viewer_coupe_originale(irm_id: str, idx: int, current_user=Depends(get_current_user)):
+    irm = await IRMScan.get(irm_id)
+    if not irm:
+        raise HTTPException(404, "IRM non trouvée")
+    chemin = _resoudre_chemin(irm)
+    if not chemin:
+        raise HTTPException(404, "Fichier IRM introuvable")
+    import numpy as np, io, base64
+    from PIL import Image
+    data = _charger_volume(chemin)
+    n = data.shape[2] if len(data.shape) == 3 else 1
+    idx = max(0, min(idx, n - 1))
+    coupe = _prep_coupe(data, idx, size=256)
+    uint8 = ((coupe - coupe.min()) / (coupe.max() - coupe.min() + 1e-6) * 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(uint8).save(buf, format='PNG')
+    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return {"image": f"data:image/png;base64,{b64}", "coupe": idx}
+
+
+@router.get("/viewer/{irm_id}/overlay/{idx}")
+async def viewer_coupe_overlay(irm_id: str, idx: int, current_user=Depends(get_current_user)):
+    irm = await IRMScan.get(irm_id)
+    if not irm:
+        raise HTTPException(404, "IRM non trouvée")
+    chemin_t1 = _resoudre_chemin(irm)
+    if not chemin_t1:
+        raise HTTPException(404, "Fichier IRM introuvable")
+
+    pred = get_pred_model()
+    if pred is None:
+        raise HTTPException(503, "Modèle IA non disponible")
+
+    # Auto-sélection T0
+    chemin_t0 = chemin_t1
+    autres = await IRMScan.find(
+        IRMScan.patient_id == irm.patient_id,
+        IRMScan.sequence_type == irm.sequence_type,
+    ).sort(+IRMScan.uploaded_at).to_list()
+    for candidat in autres:
+        if str(candidat.id) == irm_id:
+            continue
+        c = _resoudre_chemin(candidat)
+        if c:
+            chemin_t0 = c
+            break
+
+    import torch, numpy as np, io, base64
+    from PIL import Image
+
+    model, device = pred
+    data_t0 = _charger_volume(chemin_t0)
+    data_t1 = _charger_volume(chemin_t1)
+    n = data_t1.shape[2] if len(data_t1.shape) == 3 else 1
+    idx = max(0, min(idx, n - 1))
+
+    coupe_t0 = _prep_coupe(data_t0, idx, size=256)
+    coupe_t1 = _prep_coupe(data_t1, idx, size=256)
+    tensor = torch.tensor(np.stack([coupe_t0, coupe_t1])).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        seg_out, _ = model(tensor)
+
+    seg_np = seg_out.squeeze().cpu().numpy()
+    t1_uint8 = ((coupe_t1 - coupe_t1.min()) / (coupe_t1.max() - coupe_t1.min() + 1e-6) * 255).astype(np.uint8)
+    masque_bin = (seg_np > 0.5).astype(np.uint8)
+    n_lesions = int(masque_bin.sum())
+
+    img_rgb = np.stack([t1_uint8, t1_uint8, t1_uint8], axis=-1)
+    if n_lesions > 0:
+        img_rgb[:, :, 0] = np.where(masque_bin == 1, 255, t1_uint8)
+        img_rgb[:, :, 1] = np.where(masque_bin == 1, 0, t1_uint8)
+        img_rgb[:, :, 2] = np.where(masque_bin == 1, 0, t1_uint8)
+
+    buf = io.BytesIO()
+    Image.fromarray(img_rgb.astype(np.uint8)).save(buf, format='PNG')
+    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return {
+        "image": f"data:image/png;base64,{b64}",
+        "coupe": idx,
+        "n_lesions": n_lesions
+    }

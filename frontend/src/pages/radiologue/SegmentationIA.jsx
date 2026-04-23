@@ -41,13 +41,13 @@ export default function SegmentationIA({ irmId, irmPath, onTermine }) {
         <span style={{
           background: '#f3f4f6', color: '#6b7280',
           padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 600
-        }}>U-Net • Dice 0.648</span>
+        }}>Segmentation IA</span>
       </div>
 
       {!resultats && !loading && (
         <div>
           <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '16px' }}>
-            Le modèle U-Net va analyser toutes les coupes de cette IRM FLAIR
+            L'IA va analyser toutes les coupes de cette IRM FLAIR
             et détecter automatiquement les lésions de la SEP.
           </p>
           <button onClick={lancer} style={{
