@@ -7,6 +7,8 @@ import nibabel as nib
 import numpy as np
 import io
 import tempfile
+import cloudinary
+import cloudinary.uploader
 
 from app.models.documents import IRMScan, Patient, VisiteClinique
 from app.core.auth import get_current_user
@@ -16,6 +18,13 @@ viewer_router = APIRouter()
 
 FORMATS_VALIDES = [".nii", ".nii.gz", ".dcm"]
 TAILLE_MAX_MB = 500
+
+# ─── Configuration Cloudinary ────────────────────────────────────────────────
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+)
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -65,21 +74,20 @@ def extraire_metadata_nii(contenu: bytes, nom_fichier: str) -> dict:
     return metadata
 
 
-async def _get_db():
-    from app.core.database import motor_client
-    return motor_client["sep_db"]
+async def _charger_nii_depuis_cloudinary(irm: IRMScan) -> nib.Nifti1Image:
+    """Télécharge le fichier NIfTI depuis Cloudinary et le charge en mémoire"""
+    import httpx
+    url = irm.fichier_path
+    if not url or not url.startswith("http"):
+        raise HTTPException(status_code=404, detail="URL Cloudinary invalide")
 
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, timeout=60.0)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Fichier IRM introuvable sur Cloudinary")
+        contenu = response.content
 
-# ─── Charger NIfTI depuis MongoDB ───────────────────────────────────────────
-
-async def _charger_nii_depuis_mongodb(irm: IRMScan) -> nib.Nifti1Image:
-    db = await _get_db()
-    doc = await db["irm_fichiers"].find_one({"_id": irm.fichier_path})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans MongoDB")
-
-    contenu = doc["contenu"]
-    nom = doc.get("nom", "irm.nii.gz")
+    nom = irm.metadata_dicom.get("nom_original", "irm.nii.gz") if irm.metadata_dicom else "irm.nii.gz"
     suffix = ".nii.gz" if nom.endswith(".nii.gz") else ".nii"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -139,23 +147,26 @@ async def upload_irm(
             detail=f"Ce fichier existe déjà pour ce patient avec l'ID : {str(existant.id)}"
         )
 
-    # 6. Stocker le fichier dans MongoDB (collection irm_fichiers)
-    db = await _get_db()
-    fichier_id = str(uuid.uuid4())
-    await db["irm_fichiers"].insert_one({
-        "_id": fichier_id,
-        "contenu": contenu,
-        "nom": nom,
-        "patient_id": patient_id,
-        "content_type": fichier.content_type or "application/octet-stream"
-    })
+    # 6. Upload vers Cloudinary
+    try:
+        fichier_uid = str(uuid.uuid4())
+        upload_result = cloudinary.uploader.upload(
+            io.BytesIO(contenu),
+            public_id=f"irm/{patient_id}/{fichier_uid}",
+            resource_type="raw",
+            folder="neuro_predict_ms",
+        )
+        cloudinary_url = upload_result["secure_url"]
+        cloudinary_public_id = upload_result["public_id"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur upload Cloudinary : {str(e)}")
 
     # 7. Créer document IRMScan
     irm_doc = IRMScan(
         patient_id=patient_id,
         visite_id=visite_id,
-        dicom_uid=str(uuid.uuid4()),
-        fichier_path=fichier_id,
+        dicom_uid=cloudinary_public_id,
+        fichier_path=cloudinary_url,
         sequence_type=sequence_type,
         metadata_dicom=metadata,
         statut="en_attente",
@@ -205,10 +216,11 @@ async def delete_irm(
     irm = await IRMScan.get(irm_id)
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
-
-    # Supprimer le fichier de MongoDB
-    db = await _get_db()
-    await db["irm_fichiers"].delete_one({"_id": irm.fichier_path})
+    try:
+        if irm.dicom_uid:
+            cloudinary.uploader.destroy(irm.dicom_uid, resource_type="raw")
+    except Exception:
+        pass
     await irm.delete()
     return {"message": "IRM supprimée avec succès"}
 
@@ -223,13 +235,12 @@ async def servir_fichier_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    db = await _get_db()
-    doc = await db["irm_fichiers"].find_one({"_id": irm.fichier_path})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Fichier introuvable dans le stockage")
+    import httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(irm.fichier_path, timeout=60.0)
+        contenu = response.content
 
-    contenu = doc["contenu"]
-    nom = doc.get("nom", f"irm_{irm_id}.nii.gz")
+    nom = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
     media_type = "application/gzip" if nom.endswith(".nii.gz") else "application/octet-stream"
 
     return StreamingResponse(
@@ -254,14 +265,12 @@ async def download_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    db = await _get_db()
-    doc = await db["irm_fichiers"].find_one({"_id": irm.fichier_path})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans le stockage")
+    import httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(irm.fichier_path, timeout=60.0)
+        contenu = response.content
 
-    contenu = doc["contenu"]
-    nom = doc.get("nom", f"irm_{irm_id}.nii.gz")
-
+    nom = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
     return StreamingResponse(
         io.BytesIO(contenu),
         media_type="application/octet-stream",
@@ -361,9 +370,8 @@ async def get_coupe_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(404, "IRM non trouvée")
 
-    img = await _charger_nii_depuis_mongodb(irm)
+    img = await _charger_nii_depuis_cloudinary(irm)
     data = np.squeeze(img.get_fdata().astype(np.float32))
-
     n = data.shape[2] if len(data.shape) == 3 else 1
     idx = coupe if coupe is not None else n // 2
     idx = min(max(idx, 0), n - 1)
@@ -402,24 +410,20 @@ async def comparer_irms(
         irm = await IRMScan.get(irm_id)
         if not irm or irm.patient_id != patient_id:
             raise HTTPException(404, f"IRM {irm_id} non trouvée")
-
-        img = await _charger_nii_depuis_mongodb(irm)
+        img = await _charger_nii_depuis_cloudinary(irm)
         data = np.squeeze(img.get_fdata().astype(np.float32))
         n = data.shape[2] if len(data.shape) == 3 else 1
         idx = coupe_idx if coupe_idx is not None else n // 2
         idx = min(idx, n - 1)
-
         coupe_data = data[:, :, idx] if len(data.shape) == 3 else data
         std = coupe_data.std()
         coupe_norm = (coupe_data - coupe_data.mean()) / std if std > 0 else coupe_data
         coupe_uint8 = ((coupe_norm - coupe_norm.min()) /
                        (coupe_norm.max() - coupe_norm.min() + 1e-6) * 255).astype(np.uint8)
-
         pil_img = Image.fromarray(coupe_uint8).resize((256, 256), Image.BILINEAR)
         buffer = io.BytesIO()
         pil_img.save(buffer, format='PNG')
         b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-
         return {
             "irm_id": irm_id,
             "image": f"data:image/png;base64,{b64}",
@@ -447,7 +451,7 @@ async def viewer_info(irm_id: str, current_user=Depends(get_current_user)):
     irm = await IRMScan.get(irm_id)
     if not irm:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
-    img = await _charger_nii_depuis_mongodb(irm)
+    img = await _charger_nii_depuis_cloudinary(irm)
     shape = img.shape
     return {
         "irm_id": irm_id,
@@ -475,7 +479,7 @@ async def viewer_coupe(
     if not irm:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    img = await _charger_nii_depuis_mongodb(irm)
+    img = await _charger_nii_depuis_cloudinary(irm)
     data = img.get_fdata()
 
     if plan == "axial":
