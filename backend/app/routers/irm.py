@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 import os
 import uuid
+import gzip
 import nibabel as nib
 import numpy as np
 import io
@@ -50,6 +51,18 @@ def serialize(irm: IRMScan) -> dict:
     }
 
 
+def compresser_si_necessaire(contenu: bytes, nom: str) -> tuple:
+    """Compresse en .nii.gz si le fichier dépasse 8 MB et n'est pas déjà compressé"""
+    taille_mb = len(contenu) / (1024 * 1024)
+    if taille_mb > 8 and nom.endswith(".nii"):
+        print(f"Compression de {nom} ({taille_mb:.1f} MB)...")
+        contenu_gz = gzip.compress(contenu, compresslevel=6)
+        taille_apres = len(contenu_gz) / (1024 * 1024)
+        print(f"Après compression : {taille_apres:.1f} MB")
+        return contenu_gz, nom + ".gz"
+    return contenu, nom
+
+
 def extraire_metadata_nii(contenu: bytes, nom_fichier: str) -> dict:
     suffix = ".nii.gz" if nom_fichier.endswith(".nii.gz") else ".nii"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -82,13 +95,14 @@ async def _charger_nii_depuis_cloudinary(irm: IRMScan) -> nib.Nifti1Image:
         raise HTTPException(status_code=404, detail="URL Cloudinary invalide")
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=60.0)
+        response = await client.get(url, timeout=120.0)
         if response.status_code != 200:
             raise HTTPException(status_code=404, detail="Fichier IRM introuvable sur Cloudinary")
         contenu = response.content
 
     nom = irm.metadata_dicom.get("nom_original", "irm.nii.gz") if irm.metadata_dicom else "irm.nii.gz"
-    suffix = ".nii.gz" if nom.endswith(".nii.gz") else ".nii"
+    # Le fichier stocké est toujours .nii.gz (compressé)
+    suffix = ".nii.gz" if nom.endswith(".nii.gz") or nom.endswith(".nii") else ".nii.gz"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contenu)
@@ -130,7 +144,7 @@ async def upload_irm(
     if taille_mb > TAILLE_MAX_MB:
         raise HTTPException(status_code=400, detail=f"Fichier trop grand : {taille_mb:.1f} MB (max {TAILLE_MAX_MB} MB)")
 
-    # 4. Extraire métadonnées
+    # 4. Extraire métadonnées (depuis le fichier original avant compression)
     try:
         metadata = extraire_metadata_nii(contenu, nom)
     except Exception as e:
@@ -147,21 +161,30 @@ async def upload_irm(
             detail=f"Ce fichier existe déjà pour ce patient avec l'ID : {str(existant.id)}"
         )
 
-    # 6. Upload vers Cloudinary
+    # 6. Compresser si nécessaire (limite Cloudinary = 10 MB)
+    contenu_upload, nom_upload = compresser_si_necessaire(contenu, nom)
+    taille_upload_mb = len(contenu_upload) / (1024 * 1024)
+
+    if taille_upload_mb > 10:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fichier trop volumineux même après compression : {taille_upload_mb:.1f} MB. Maximum : 10 MB."
+        )
+
+    # 7. Upload vers Cloudinary
     try:
         fichier_uid = str(uuid.uuid4())
         upload_result = cloudinary.uploader.upload(
-            io.BytesIO(contenu),
-            public_id=f"irm/{patient_id}/{fichier_uid}",
+            io.BytesIO(contenu_upload),
+            public_id=f"neuro_predict_ms/irm/{patient_id}/{fichier_uid}",
             resource_type="raw",
-            folder="neuro_predict_ms",
         )
         cloudinary_url = upload_result["secure_url"]
         cloudinary_public_id = upload_result["public_id"]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur upload Cloudinary : {str(e)}")
 
-    # 7. Créer document IRMScan
+    # 8. Créer document IRMScan
     irm_doc = IRMScan(
         patient_id=patient_id,
         visite_id=visite_id,
@@ -174,7 +197,7 @@ async def upload_irm(
     )
     await irm_doc.insert()
 
-    # 8. Lier à la visite si fournie
+    # 9. Lier à la visite si fournie
     if visite_id:
         visite = await VisiteClinique.get(visite_id)
         if visite:
@@ -237,7 +260,7 @@ async def servir_fichier_irm(
 
     import httpx
     async with httpx.AsyncClient() as client:
-        response = await client.get(irm.fichier_path, timeout=60.0)
+        response = await client.get(irm.fichier_path, timeout=120.0)
         contenu = response.content
 
     nom = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
@@ -267,7 +290,7 @@ async def download_irm(
 
     import httpx
     async with httpx.AsyncClient() as client:
-        response = await client.get(irm.fichier_path, timeout=60.0)
+        response = await client.get(irm.fichier_path, timeout=120.0)
         contenu = response.content
 
     nom = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
