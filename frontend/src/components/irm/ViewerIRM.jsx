@@ -43,16 +43,7 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
         return
       }
 
-      // 2️⃣ Vérifier que le fichier est accessible
-      const fichierRes = await fetch(
-        `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier`,
-        { method: 'HEAD', headers: { Authorization: `Bearer ${token}` } }
-      )
-      if (!fichierRes.ok) {
-        setErreur("Le fichier IRM n'est pas disponible sur le serveur")
-        setLoading(false)
-        return
-      }
+      
 
       // 3️⃣ Charger Niivue
       const { Niivue } = await import('@niivue/niivue')
