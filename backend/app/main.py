@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.database import connect_db
 from app.routers import patients, visites, irm, auth, admin, analyses, agenda, predictions, chat, dashboard, patient_portal, notifications, settings, public, news, rendez_vous, medecins, pdf_generator, contrats
-
+from app.routers.irm import viewer_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
@@ -24,7 +24,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Administration"])
 app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(visites.router, prefix="/api/patients", tags=["Visites"])
 app.include_router(irm.router, prefix="/api/patients", tags=["IRM"])
-app.include_router(irm.router, prefix="/api/predictions", tags=["IRM Viewer"])
+app.include_router(viewer_router, prefix="/api/predictions", tags=["IRM Viewer"])
 app.include_router(analyses.router, prefix="/api/analyses", tags=["Analyses"])
 app.include_router(agenda.router, prefix="/api/agenda", tags=["Agenda"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Prédictions IA"])
