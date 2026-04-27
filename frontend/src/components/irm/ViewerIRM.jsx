@@ -99,9 +99,31 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
         setSlice(Math.floor(total / 2))
       }
 
-      // ✅ Forcer le rendu et arrêter le loading
-      nv.drawScene()
-      setLoading(false)
+  // ✅ NOUVEAU
+nv.onImageLoaded = () => {
+  nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
+  
+  const vol = nv.volumes[0]
+  if (vol) {
+    const dims = vol.dims || vol.hdr?.dims || []
+    const nz = dims[3] || 0
+    const nx = dims[1] || 0
+    const ny = dims[2] || 0
+    const total = nz > 0 ? nz : Math.max(nx, ny)
+    setTotalSlices(total)
+    setSlice(Math.floor(total / 2))
+  }
+  
+  nv.drawScene()
+  setLoading(false)
+}
+
+await nv.loadVolumes([{
+  url: urlFichier,
+  name: `${sequenceType || 'IRM'}.nii`,
+  colormap: 'gray',
+  opacity: 1,
+}])
 
     } catch (e) {
       console.error('ViewerIRM error:', e)
