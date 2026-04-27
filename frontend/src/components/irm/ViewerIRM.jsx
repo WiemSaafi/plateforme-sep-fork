@@ -69,8 +69,7 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
       await nv.attachToCanvas(canvasRef.current)
 
       // ✅ URL absolue avec token en query param (Niivue ne supporte pas les headers custom)
-      const fileId = fichierPath || irmId
-const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${fileId}/fichier?token=${token}`
+     const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
 
       await nv.loadVolumes([{
         url: urlFichier,
