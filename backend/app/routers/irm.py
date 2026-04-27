@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
 import os
+import uuid
 import nibabel as nib
 import numpy as np
 import io
@@ -100,6 +101,7 @@ async def upload_irm(
     except Exception as e:
         metadata = {"format": ext, "nom_original": nom, "erreur": str(e)}
 
+    # ✅ Sauvegarde dans GridFS
     gridfs = get_gridfs()
     gridfs_id = await gridfs.upload_from_stream(
         filename=nom,
@@ -111,9 +113,11 @@ async def upload_irm(
         }
     )
 
+    # ✅ dicom_uid généré automatiquement
     irm = IRMScan(
         patient_id=patient_id,
         visite_id=visite_id,
+        dicom_uid=str(uuid.uuid4()),
         fichier_path=str(gridfs_id),
         sequence_type=sequence_type,
         metadata_dicom=metadata,
