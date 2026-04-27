@@ -1,3 +1,5 @@
+# En haut du fichier — ajouter à l'import existant
+from app.core.auth import get_current_user, get_current_user_optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -177,7 +179,7 @@ async def download_irm(
 async def servir_fichier_irm(
     patient_id: str,
     irm_id: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(get_current_user_optional)  # ✅ ici
 ):
     """Route utilisée par Niivue pour charger le fichier NIfTI directement."""
     irm = await IRMScan.get(irm_id)
