@@ -67,9 +67,9 @@ def extraire_metadata_nii(contenu: bytes, nom_fichier: str) -> dict:
         os.unlink(tmp_path)
     return metadata
 
-
 def get_gridfs() -> AsyncIOMotorGridFSBucket:
-    db = get_db()
+    from app.core.database import motor_client
+    db = motor_client["sep_db"]
     return AsyncIOMotorGridFSBucket(db, bucket_name="irm_files")
 
 
