@@ -7,12 +7,9 @@ import nibabel as nib
 import numpy as np
 import io
 import tempfile
-from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-from bson import ObjectId
 
 from app.models.documents import IRMScan, Patient, VisiteClinique
 from app.core.auth import get_current_user
- 
 
 router = APIRouter()
 viewer_router = APIRouter()
@@ -67,25 +64,23 @@ def extraire_metadata_nii(contenu: bytes, nom_fichier: str) -> dict:
         os.unlink(tmp_path)
     return metadata
 
-def get_gridfs() -> AsyncIOMotorGridFSBucket:
+
+async def _get_db():
     from app.core.database import motor_client
-    db = motor_client["sep_db"]
-    return AsyncIOMotorGridFSBucket(db, bucket_name="irm_files")
+    return motor_client["sep_db"]
 
 
-# ─── Viewer : charger NIfTI depuis GridFS (helper partagé) ──────────────────
+# ─── Charger NIfTI depuis MongoDB ───────────────────────────────────────────
 
-async def _charger_nii_depuis_gridfs(irm: IRMScan) -> nib.Nifti1Image:
-    gridfs = get_gridfs()
-    try:
-        stream = await gridfs.open_download_stream(ObjectId(irm.fichier_path))
-        contenu = await stream.read()
-    except Exception:
-        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans GridFS")
+async def _charger_nii_depuis_mongodb(irm: IRMScan) -> nib.Nifti1Image:
+    db = await _get_db()
+    doc = await db["irm_fichiers"].find_one({"_id": irm.fichier_path})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans MongoDB")
 
-    suffix = ".nii.gz"
-    if irm.metadata_dicom and irm.metadata_dicom.get("nom_original", "").endswith(".nii"):
-        suffix = ".nii"
+    contenu = doc["contenu"]
+    nom = doc.get("nom", "irm.nii.gz")
+    suffix = ".nii.gz" if nom.endswith(".nii.gz") else ".nii"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contenu)
@@ -102,7 +97,7 @@ async def _charger_nii_depuis_gridfs(irm: IRMScan) -> nib.Nifti1Image:
 # ROUTER PATIENT  →  monté sur /api/patients
 # ════════════════════════════════════════════════════════════════════════════
 
-@router.post("/{patient_id}/irm")
+@router.post("/{patient_id}/irm", status_code=201)
 async def upload_irm(
     patient_id: str,
     fichier: UploadFile = File(...),
@@ -110,41 +105,57 @@ async def upload_irm(
     sequence_type: Optional[str] = Query("T1"),
     current_user=Depends(get_current_user)
 ):
+    # 1. Vérifier patient
     patient = await Patient.get(patient_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient non trouvé")
 
+    # 2. Vérifier format
     nom = fichier.filename
     ext = ".nii.gz" if nom.endswith(".nii.gz") else os.path.splitext(nom)[1].lower()
     if ext not in FORMATS_VALIDES:
         raise HTTPException(status_code=400, detail=f"Format non supporté : {ext}")
 
+    # 3. Lire contenu
     contenu = await fichier.read()
     taille_mb = len(contenu) / (1024 * 1024)
     if taille_mb > TAILLE_MAX_MB:
         raise HTTPException(status_code=400, detail=f"Fichier trop grand : {taille_mb:.1f} MB (max {TAILLE_MAX_MB} MB)")
 
+    # 4. Extraire métadonnées
     try:
         metadata = extraire_metadata_nii(contenu, nom)
     except Exception as e:
         metadata = {"format": ext, "nom_original": nom, "erreur": str(e)}
 
-    gridfs = get_gridfs()
-    gridfs_id = await gridfs.upload_from_stream(
-        filename=nom,
-        source=io.BytesIO(contenu),
-        metadata={
-            "patient_id": patient_id,
-            "sequence_type": sequence_type,
-            "content_type": fichier.content_type or "application/octet-stream"
-        }
-    )
+    # 5. Vérifier doublon
+    existant = await IRMScan.find_one({
+        "patient_id": patient_id,
+        "metadata_dicom.nom_original": nom
+    })
+    if existant:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ce fichier existe déjà pour ce patient avec l'ID : {str(existant.id)}"
+        )
 
+    # 6. Stocker le fichier dans MongoDB (collection irm_fichiers)
+    db = await _get_db()
+    fichier_id = str(uuid.uuid4())
+    await db["irm_fichiers"].insert_one({
+        "_id": fichier_id,
+        "contenu": contenu,
+        "nom": nom,
+        "patient_id": patient_id,
+        "content_type": fichier.content_type or "application/octet-stream"
+    })
+
+    # 7. Créer document IRMScan
     irm_doc = IRMScan(
         patient_id=patient_id,
         visite_id=visite_id,
         dicom_uid=str(uuid.uuid4()),
-        fichier_path=str(gridfs_id),
+        fichier_path=fichier_id,
         sequence_type=sequence_type,
         metadata_dicom=metadata,
         statut="en_attente",
@@ -152,6 +163,7 @@ async def upload_irm(
     )
     await irm_doc.insert()
 
+    # 8. Lier à la visite si fournie
     if visite_id:
         visite = await VisiteClinique.get(visite_id)
         if visite:
@@ -184,8 +196,8 @@ async def get_irm(
     return serialize(irm)
 
 
-@router.get("/{patient_id}/irm/{irm_id}/download")
-async def download_irm(
+@router.delete("/{patient_id}/irm/{irm_id}")
+async def delete_irm(
     patient_id: str,
     irm_id: str,
     current_user=Depends(get_current_user)
@@ -194,25 +206,11 @@ async def download_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    gridfs = get_gridfs()
-    try:
-        gridfs_stream = await gridfs.open_download_stream(ObjectId(irm.fichier_path))
-    except Exception:
-        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans le stockage")
-
-    async def file_generator():
-        while True:
-            chunk = await gridfs_stream.read(1024 * 1024)
-            if not chunk:
-                break
-            yield chunk
-
-    nom_fichier = irm.metadata_dicom.get("nom_original", f"irm_{irm_id}.nii.gz") if irm.metadata_dicom else f"irm_{irm_id}.nii.gz"
-    return StreamingResponse(
-        file_generator(),
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'}
-    )
+    # Supprimer le fichier de MongoDB
+    db = await _get_db()
+    await db["irm_fichiers"].delete_one({"_id": irm.fichier_path})
+    await irm.delete()
+    return {"message": "IRM supprimée avec succès"}
 
 
 @router.get("/{patient_id}/irm/{irm_id}/fichier")
@@ -225,24 +223,20 @@ async def servir_fichier_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    if not irm.fichier_path:
-        raise HTTPException(status_code=404, detail="Aucun fichier associé à cette IRM")
-
-    gridfs = get_gridfs()
-    try:
-        gridfs_stream = await gridfs.open_download_stream(ObjectId(irm.fichier_path))
-        contenu = await gridfs_stream.read()
-    except Exception:
+    db = await _get_db()
+    doc = await db["irm_fichiers"].find_one({"_id": irm.fichier_path})
+    if not doc:
         raise HTTPException(status_code=404, detail="Fichier introuvable dans le stockage")
 
-    nom_original = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
-    media_type = "application/gzip" if nom_original.endswith(".nii.gz") else "application/octet-stream"
+    contenu = doc["contenu"]
+    nom = doc.get("nom", f"irm_{irm_id}.nii.gz")
+    media_type = "application/gzip" if nom.endswith(".nii.gz") else "application/octet-stream"
 
     return StreamingResponse(
         io.BytesIO(contenu),
         media_type=media_type,
         headers={
-            "Content-Disposition": f'inline; filename="{nom_original}"',
+            "Content-Disposition": f'inline; filename="{nom}"',
             "Content-Length": str(len(contenu)),
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Expose-Headers": "Content-Length, Content-Disposition",
@@ -250,19 +244,210 @@ async def servir_fichier_irm(
     )
 
 
+@router.get("/{patient_id}/irm/{irm_id}/download")
+async def download_irm(
+    patient_id: str,
+    irm_id: str,
+    current_user=Depends(get_current_user)
+):
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+
+    db = await _get_db()
+    doc = await db["irm_fichiers"].find_one({"_id": irm.fichier_path})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans le stockage")
+
+    contenu = doc["contenu"]
+    nom = doc.get("nom", f"irm_{irm_id}.nii.gz")
+
+    return StreamingResponse(
+        io.BytesIO(contenu),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{nom}"'}
+    )
+
+
+@router.post("/{patient_id}/irm/{irm_id}/rapport")
+async def ajouter_rapport(
+    patient_id: str,
+    irm_id: str,
+    rapport: dict,
+    current_user=Depends(get_current_user)
+):
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+    irm.rapport = rapport
+    irm.statut = "analysee"
+    irm.radiologue_id = str(current_user.id)
+    irm.radiologue_nom = f"{current_user.prenom} {current_user.nom}"
+    await irm.save()
+    return {"message": "Rapport sauvegardé avec succès", "irm_id": irm_id}
+
+
+@router.get("/{patient_id}/irm/{irm_id}/rapport")
+async def get_rapport(patient_id: str, irm_id: str):
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+    if not irm.rapport:
+        raise HTTPException(status_code=404, detail="Aucun rapport pour cette IRM")
+    return irm.rapport
+
+
+@router.post("/{patient_id}/irm/{irm_id}/envoyer")
+async def envoyer_rapport(
+    patient_id: str,
+    irm_id: str,
+    body: dict,
+    current_user=Depends(get_current_user)
+):
+    from datetime import datetime
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+    if not irm.rapport:
+        raise HTTPException(status_code=400, detail="Aucun rapport à envoyer.")
+    medecin_id = body.get("medecin_id")
+    if not medecin_id:
+        raise HTTPException(status_code=400, detail="medecin_id obligatoire")
+    irm.envoi_medecin_id = medecin_id
+    irm.envoye_at = datetime.utcnow()
+    await irm.save()
+    return {"message": "Rapport envoyé au médecin", "irm_id": irm_id}
+
+
+@router.get("/rapports/recus")
+async def get_rapports_recus(current_user=Depends(get_current_user)):
+    if current_user.role not in ["medecin", "admin"]:
+        raise HTTPException(403, "Accès réservé au médecin")
+    irms = await IRMScan.find(IRMScan.envoi_medecin_id == str(current_user.id)).to_list()
+    result = []
+    for irm in irms:
+        patient = await Patient.get(irm.patient_id)
+        d = serialize(irm)
+        d["patient_nom"] = f"{patient.prenom} {patient.nom}" if patient else "Inconnu"
+        result.append(d)
+    result.sort(key=lambda x: x["envoye_at"] or x["uploaded_at"], reverse=True)
+    return result
+
+
+@router.get("/irm/toutes")
+async def get_toutes_irms(current_user=Depends(get_current_user)):
+    if current_user.role not in ["radiologue", "admin"]:
+        raise HTTPException(403, "Accès réservé au radiologue")
+    irms = await IRMScan.find_all().to_list()
+    result = []
+    for irm in irms:
+        patient = await Patient.get(irm.patient_id)
+        d = serialize(irm)
+        d["patient_nom"] = f"{patient.prenom} {patient.nom}" if patient else "Inconnu"
+        result.append(d)
+    return result
+
+
+@router.get("/{patient_id}/irm/{irm_id}/coupe")
+async def get_coupe_irm(
+    patient_id: str,
+    irm_id: str,
+    coupe: int = Query(None),
+):
+    import base64
+    from PIL import Image
+
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(404, "IRM non trouvée")
+
+    img = await _charger_nii_depuis_mongodb(irm)
+    data = np.squeeze(img.get_fdata().astype(np.float32))
+
+    n = data.shape[2] if len(data.shape) == 3 else 1
+    idx = coupe if coupe is not None else n // 2
+    idx = min(max(idx, 0), n - 1)
+
+    coupe_data = data[:, :, idx] if len(data.shape) == 3 else data
+    std = coupe_data.std()
+    coupe_norm = (coupe_data - coupe_data.mean()) / std if std > 0 else coupe_data
+    coupe_uint8 = ((coupe_norm - coupe_norm.min()) /
+                   (coupe_norm.max() - coupe_norm.min() + 1e-6) * 255).astype(np.uint8)
+
+    pil_img = Image.fromarray(coupe_uint8).resize((256, 256), Image.BILINEAR)
+    buffer = io.BytesIO()
+    pil_img.save(buffer, format='PNG')
+    b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+    return {
+        "image": f"data:image/png;base64,{b64}",
+        "coupe_actuelle": idx,
+        "nb_coupes": n,
+        "sequence_type": irm.sequence_type,
+    }
+
+
+@router.get("/{patient_id}/irm/comparer/")
+async def comparer_irms(
+    patient_id: str,
+    irm1_id: str = Query(...),
+    irm2_id: str = Query(...),
+    coupe: int = Query(None),
+    current_user=Depends(get_current_user)
+):
+    import base64
+    from PIL import Image
+
+    async def extraire_coupe_b64(irm_id: str, coupe_idx: int = None):
+        irm = await IRMScan.get(irm_id)
+        if not irm or irm.patient_id != patient_id:
+            raise HTTPException(404, f"IRM {irm_id} non trouvée")
+
+        img = await _charger_nii_depuis_mongodb(irm)
+        data = np.squeeze(img.get_fdata().astype(np.float32))
+        n = data.shape[2] if len(data.shape) == 3 else 1
+        idx = coupe_idx if coupe_idx is not None else n // 2
+        idx = min(idx, n - 1)
+
+        coupe_data = data[:, :, idx] if len(data.shape) == 3 else data
+        std = coupe_data.std()
+        coupe_norm = (coupe_data - coupe_data.mean()) / std if std > 0 else coupe_data
+        coupe_uint8 = ((coupe_norm - coupe_norm.min()) /
+                       (coupe_norm.max() - coupe_norm.min() + 1e-6) * 255).astype(np.uint8)
+
+        pil_img = Image.fromarray(coupe_uint8).resize((256, 256), Image.BILINEAR)
+        buffer = io.BytesIO()
+        pil_img.save(buffer, format='PNG')
+        b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+        return {
+            "irm_id": irm_id,
+            "image": f"data:image/png;base64,{b64}",
+            "sequence_type": irm.sequence_type,
+            "uploaded_at": str(irm.uploaded_at),
+            "n_coupes": n,
+            "coupe_actuelle": idx
+        }
+
+    irm1_data = await extraire_coupe_b64(irm1_id, coupe)
+    irm2_data = await extraire_coupe_b64(irm2_id, coupe)
+    return {
+        "irm1": irm1_data,
+        "irm2": irm2_data,
+        "coupe": coupe if coupe is not None else irm1_data["n_coupes"] // 2
+    }
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # VIEWER ROUTER  →  monté sur /api/predictions
-# Routes finales :
-#   GET /api/predictions/viewer/{irm_id}/info
-#   GET /api/predictions/viewer/{irm_id}/coupe/{plan}/{idx}
 # ════════════════════════════════════════════════════════════════════════════
 
 @viewer_router.get("/viewer/{irm_id}/info")
-async def viewer_info(irm_id: str):
+async def viewer_info(irm_id: str, current_user=Depends(get_current_user)):
     irm = await IRMScan.get(irm_id)
     if not irm:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
-    img = await _charger_nii_depuis_gridfs(irm)
+    img = await _charger_nii_depuis_mongodb(irm)
     shape = img.shape
     return {
         "irm_id": irm_id,
@@ -276,7 +461,12 @@ async def viewer_info(irm_id: str):
 
 
 @viewer_router.get("/viewer/{irm_id}/coupe/{plan}/{idx}")
-async def viewer_coupe(irm_id: str, plan: str, idx: int):
+async def viewer_coupe(
+    irm_id: str,
+    plan: str,
+    idx: int,
+    current_user=Depends(get_current_user)
+):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -285,7 +475,7 @@ async def viewer_coupe(irm_id: str, plan: str, idx: int):
     if not irm:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    img = await _charger_nii_depuis_gridfs(irm)
+    img = await _charger_nii_depuis_mongodb(irm)
     data = img.get_fdata()
 
     if plan == "axial":
