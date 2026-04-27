@@ -227,7 +227,7 @@ export default function PatientDetail() {
         ])
         setPatient(pRes.data)
         setVisites(vRes.data.data || [])
-        setIrms(iRes.data.data || [])
+        setIrms(Array.isArray(iRes.data) ? iRes.data : (iRes.data.data || iRes.data || []))
       } catch (err) {
         console.error(err)
       } finally {
@@ -269,7 +269,7 @@ export default function PatientDetail() {
       setShowIrmForm(false)
       setIrmFile(null)
       const iRes = await patientService.getIRM(id)
-      setIrms(iRes.data.data || [])
+      setIrms(Array.isArray(iRes.data) ? iRes.data : (iRes.data.data || iRes.data || []))
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
       setError(err.response?.data?.detail || 'Erreur upload')
