@@ -21,14 +21,16 @@ function ViewerInline({ irmId }) {
   const [src, setSrc] = useState(null)
   const [loading, setLoading] = useState(false)
   const debounceRef = useRef(null)
+  const blobUrlRef = useRef(null)
 
   useEffect(() => {
     fetch(`/api/predictions/viewer/${irmId}/info`, { headers })
-      .then(r => r.json()).then(d => {
-  const n = d.nb_slices_axial || d.n_coupes || 0
-  setNCoupes(n)
-  setSlice(Math.floor(n / 2))
-})
+      .then(r => r.json())
+      .then(d => {
+        const n = d.nb_slices_axial || d.n_coupes || 0
+        setNCoupes(n)
+        setSlice(Math.floor(n / 2))
+      })
       .catch(() => {})
   }, [irmId])
 
@@ -37,13 +39,31 @@ function ViewerInline({ irmId }) {
     setLoading(true)
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
-        .then(r => r.json())
-        .then(d => { setSrc(d.image); setLoading(false) })
+      // ✅ CORRECTION : la route backend est /coupe/{plan}/{idx}, retourne PNG pas JSON
+      fetch(`/api/predictions/viewer/${irmId}/coupe/axial/${slice}`, { headers })
+        .then(r => {
+          if (!r.ok) throw new Error('Erreur coupe')
+          return r.blob()
+        })
+        .then(blob => {
+          // Libérer l'ancien blob URL pour éviter les fuites mémoire
+          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+          const url = URL.createObjectURL(blob)
+          blobUrlRef.current = url
+          setSrc(url)
+          setLoading(false)
+        })
         .catch(() => setLoading(false))
     }, 150)
     return () => clearTimeout(debounceRef.current)
   }, [irmId, slice, nCoupes])
+
+  // Nettoyer le blob URL au démontage
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+    }
+  }, [])
 
   return (
     <div style={{ background: '#0f172a', borderRadius: '10px', overflow: 'hidden' }}>
@@ -79,7 +99,6 @@ function ViewerInline({ irmId }) {
     </div>
   )
 }
-
 function CarteIRM({ irm, patientId }) {
   const [showViewer, setShowViewer] = useState(false)
   const [mode, setMode] = useState('2d') // '2d' | '3d'
