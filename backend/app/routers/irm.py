@@ -248,7 +248,7 @@ async def delete_irm(
     return {"message": "IRM supprimée avec succès"}
 
 
-@router.get("/{patient_id}/irm/{irm_id}/fichier")
+@router.api_route("/{patient_id}/irm/{irm_id}/fichier", methods=["GET", "HEAD"])
 async def servir_fichier_irm(
     patient_id: str,
     irm_id: str,
