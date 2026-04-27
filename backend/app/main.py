@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from app.core.database import connect_db
 from app.routers import patients, visites, irm, auth, admin, analyses, agenda, predictions, chat, dashboard, patient_portal, notifications, settings, public, news, rendez_vous, medecins, pdf_generator, contrats
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
@@ -25,6 +24,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Administration"])
 app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(visites.router, prefix="/api/patients", tags=["Visites"])
 app.include_router(irm.router, prefix="/api/patients", tags=["IRM"])
+app.include_router(irm.router, prefix="/api/predictions", tags=["IRM Viewer"])
 app.include_router(analyses.router, prefix="/api/analyses", tags=["Analyses"])
 app.include_router(agenda.router, prefix="/api/agenda", tags=["Agenda"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Prédictions IA"])
@@ -39,7 +39,6 @@ app.include_router(rendez_vous.router, prefix="/api", tags=["Rendez-vous"])
 app.include_router(medecins.router, prefix="/api", tags=["Médecins"])
 app.include_router(pdf_generator.router, prefix="/api", tags=["PDF"])
 app.include_router(contrats.router, prefix="/api", tags=["Contrats"])
-
 
 @app.get("/api/health")
 async def health():
