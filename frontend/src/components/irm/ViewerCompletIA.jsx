@@ -36,16 +36,10 @@ export default function ViewerCompletIA({ irmId, onClose }) {
     setOrigSrc(null)
     setOrigLoading(true)
   // APRÈS
-fetch(`/api/predictions/viewer/${irmId}/coupe/axial/${slice}`, { headers })
-  .then(r => {
-    if (!r.ok) throw new Error('Erreur')
-    return r.blob()
-  })
-  .then(blob => {
-    const url = URL.createObjectURL(blob)
-    setOrigSrc(url)
-    setOrigLoading(false)
-  })
+// APRÈS — colle exactement ceci
+fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
+  .then(r => r.json())
+  .then(d => { setOrigSrc(d.image); setOrigLoading(false) })
   .catch(() => setOrigLoading(false))
   }, [irmId, slice, nCoupes])
 
