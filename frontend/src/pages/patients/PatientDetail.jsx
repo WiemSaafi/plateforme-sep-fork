@@ -183,17 +183,20 @@ function CarteIRM({ irm, patientId }) {
         )}
       </div>
 
-      {showViewer && (
-        <div style={{ padding: '0 20px 20px' }}>
-          {mode === '2d'
-            ? <ViewerInline irmId={irm.id} />
-            : <ViewerIRM patientId={patientId} irmId={irm.id} sequenceType={irm.sequence_type} />
-          }
-        </div>
-      )}
-    </div>
-  )
-}
+    // APRÈS
+{showViewer && (
+  <div style={{ padding: '0 20px 20px' }}>
+    {mode === '2d'
+      ? <ViewerInline irmId={irm.fichier_path || irm.id} />
+      : <ViewerIRM 
+          patientId={patientId} 
+          irmId={irm.id} 
+          fichierPath={irm.fichier_path}
+          sequenceType={irm.sequence_type} 
+        />
+    }
+  </div>
+)}
 
 export default function PatientDetail() {
   const { id } = useParams()
