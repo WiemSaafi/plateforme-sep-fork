@@ -35,10 +35,18 @@ export default function ViewerCompletIA({ irmId, onClose }) {
     if (!nCoupes) return
     setOrigSrc(null)
     setOrigLoading(true)
-    fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
-      .then(r => r.json())
-      .then(d => { setOrigSrc(d.image); setOrigLoading(false) })
-      .catch(() => setOrigLoading(false))
+  // APRÈS
+fetch(`/api/predictions/viewer/${irmId}/coupe/axial/${slice}`, { headers })
+  .then(r => {
+    if (!r.ok) throw new Error('Erreur')
+    return r.blob()
+  })
+  .then(blob => {
+    const url = URL.createObjectURL(blob)
+    setOrigSrc(url)
+    setOrigLoading(false)
+  })
+  .catch(() => setOrigLoading(false))
   }, [irmId, slice, nCoupes])
 
   // Charger overlay avec debounce (300ms) si activé
