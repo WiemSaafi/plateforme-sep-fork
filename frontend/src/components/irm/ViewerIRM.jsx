@@ -4,7 +4,7 @@ import { Maximize2, Minimize2, Layers, Box, ChevronLeft, ChevronRight } from 'lu
 // ✅ Utilise la même base URL que api.js
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
-export default function ViewerIRM({ patientId, irmId, sequenceType }) {
+export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType }) {
   const canvasRef = useRef(null)
   const niivueRef = useRef(null)
   const [mode, setMode] = useState('2D')
@@ -69,7 +69,8 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
       await nv.attachToCanvas(canvasRef.current)
 
       // ✅ URL absolue avec token en query param (Niivue ne supporte pas les headers custom)
-      const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
+      const fileId = fichierPath || irmId
+const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${fileId}/fichier?token=${token}`
 
       await nv.loadVolumes([{
         url: urlFichier,
