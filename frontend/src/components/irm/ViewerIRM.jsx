@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Maximize2, Minimize2, Layers, Box, ChevronLeft, ChevronRight } from 'lucide-react'
 
-// ✅ Utilise la même base URL que api.js
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '')
 
 export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType }) {
@@ -24,6 +23,7 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
   const chargerViewer = async () => {
     setLoading(true)
     setErreur(null)
+    setTotalSlices(0)
 
     try {
       // 1️⃣ Vérifier que l'IRM existe
@@ -68,8 +68,8 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
       niivueRef.current = nv
       await nv.attachToCanvas(canvasRef.current)
 
-      // ✅ URL absolue avec token en query param (Niivue ne supporte pas les headers custom)
-     const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
+      // ✅ URL absolue avec token en query param
+      const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
 
       await nv.loadVolumes([{
         url: urlFichier,
@@ -92,15 +92,26 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
       // 5️⃣ Mode 2D / 3D
       nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
 
-      // 6️⃣ Nombre de coupes
+      // 6️⃣ Nombre de coupes — cherche dans toutes les dimensions possibles
       const vol = nv.volumes[0]
       if (vol) {
-        const nz = vol.dims[3] || vol.dims[1] || 0
-        setTotalSlices(nz)
-        setSlice(Math.floor(nz / 2))
+        console.log('vol.dims:', vol.dims, 'vol.hdr:', vol.hdr)
+        // dims = [ndim, nx, ny, nz, nt, ...]
+        const dims = vol.dims || vol.hdr?.dims || []
+        const nx = dims[1] || 0
+        const ny = dims[2] || 0
+        const nz = dims[3] || 0
+        // Prend la plus grande dimension comme nombre de coupes axiales
+        const total = nz > 0 ? nz : Math.max(nx, ny)
+        console.log('nx:', nx, 'ny:', ny, 'nz:', nz, 'total:', total)
+        setTotalSlices(total)
+        setSlice(Math.floor(total / 2))
       }
 
+      // ✅ Forcer le rendu et arrêter le loading
+      nv.drawScene()
       setLoading(false)
+
     } catch (e) {
       console.error('ViewerIRM error:', e)
       setErreur('Erreur lors du chargement de l\'IRM : ' + e.message)
@@ -116,7 +127,6 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
     niivueRef.current.drawScene()
   }
 
-  // ... (le JSX reste identique — toolbar, canvas, loading, erreur, navigation)
   return (
     <div style={{
       background: '#000', borderRadius: '12px', overflow: 'hidden',
@@ -155,6 +165,7 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
         </div>
       </div>
 
+      {/* ✅ Canvas toujours visible même si totalSlices = 0 */}
       <canvas ref={canvasRef} style={{
         width: '100%', height: '100%',
         display: loading || erreur ? 'none' : 'block'
