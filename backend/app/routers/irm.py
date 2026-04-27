@@ -258,6 +258,10 @@ async def servir_fichier_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
+    # ✅ Vérifier que l'URL est valide
+    if not irm.fichier_path or not irm.fichier_path.startswith("http"):
+        raise HTTPException(status_code=404, detail="Fichier non disponible")
+
     import httpx
     async with httpx.AsyncClient() as client:
         response = await client.get(irm.fichier_path, timeout=120.0)
