@@ -40,20 +40,16 @@ function ViewerInline({ irmId }) {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       // ✅ CORRECTION : la route backend est /coupe/{plan}/{idx}, retourne PNG pas JSON
-      fetch(`/api/predictions/viewer/${irmId}/coupe/axial/${slice}`, { headers })
-        .then(r => {
-          if (!r.ok) throw new Error('Erreur coupe')
-          return r.blob()
-        })
-        .then(blob => {
-          // Libérer l'ancien blob URL pour éviter les fuites mémoire
-          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-          const url = URL.createObjectURL(blob)
-          blobUrlRef.current = url
-          setSrc(url)
-          setLoading(false)
-        })
-        .catch(() => setLoading(false))
+     fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
+  .then(r => {
+    if (!r.ok) throw new Error('Erreur')
+    return r.json()
+  })
+  .then(d => {
+    setSrc(d.image)   // d.image est déjà "data:image/png;base64,..."
+    setLoading(false)
+  })
+  .catch(() => setLoading(false))
     }, 150)
     return () => clearTimeout(debounceRef.current)
   }, [irmId, slice, nCoupes])
