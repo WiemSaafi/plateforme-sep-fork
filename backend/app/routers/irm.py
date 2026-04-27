@@ -11,7 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from bson import ObjectId
 
 from app.models.documents import IRMScan, Patient, VisiteClinique
-from app.core.auth import get_current_user, get_current_user_optional
+from app.core.auth import get_current_user
 from app.core.database import get_db
 
 router = APIRouter()
@@ -101,7 +101,6 @@ async def upload_irm(
     except Exception as e:
         metadata = {"format": ext, "nom_original": nom, "erreur": str(e)}
 
-    # ✅ Sauvegarde dans GridFS
     gridfs = get_gridfs()
     gridfs_id = await gridfs.upload_from_stream(
         filename=nom,
@@ -113,7 +112,6 @@ async def upload_irm(
         }
     )
 
-    # ✅ dicom_uid généré automatiquement
     irm = IRMScan(
         patient_id=patient_id,
         visite_id=visite_id,
@@ -177,7 +175,6 @@ async def servir_fichier_irm(
     patient_id: str,
     irm_id: str,
     token: Optional[str] = Query(None),
-    current_user=Depends(get_current_user_optional)
 ):
     irm = await IRMScan.get(irm_id)
     if not irm or irm.patient_id != patient_id:
