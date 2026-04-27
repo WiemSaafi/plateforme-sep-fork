@@ -176,6 +176,7 @@ async def download_irm(
 async def servir_fichier_irm(
     patient_id: str,
     irm_id: str,
+    token: Optional[str] = Query(None),
     current_user=Depends(get_current_user_optional)
 ):
     irm = await IRMScan.get(irm_id)
