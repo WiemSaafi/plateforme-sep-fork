@@ -84,11 +84,59 @@ def get_lstm_model():
 # UTILITAIRES
 # ══════════════════════════════════════════════════════
 
+# APRÈS
 def _resoudre_chemin(irm):
     chemin = irm.fichier_path
-    if not os.path.exists(chemin):
-        chemin = os.path.join(BASE_DIR, irm.fichier_path)
-    return chemin if os.path.exists(chemin) else None
+    # Si c'est un chemin fichier normal
+    if os.path.exists(chemin):
+        return chemin
+    chemin2 = os.path.join(BASE_DIR, irm.fichier_path)
+    if os.path.exists(chemin2):
+        return chemin2
+    # Si c'est un ID GridFS → télécharger dans un fichier temp
+    import re
+    if re.match(r'^[a-f0-9]{24}$', str(irm.fichier_path)):
+        return _telecharger_gridfs(irm.fichier_path)
+    return None
+
+import tempfile, threading
+_gridfs_cache = {}
+_gridfs_lock = threading.Lock()
+
+def _telecharger_gridfs(fichier_id: str):
+    """Télécharge un fichier GridFS dans un fichier temporaire et retourne son chemin."""
+    with _gridfs_lock:
+        if fichier_id in _gridfs_cache:
+            chemin = _gridfs_cache[fichier_id]
+            if os.path.exists(chemin):
+                return chemin
+        try:
+            import asyncio
+            from app.core.database import get_gridfs
+            loop = asyncio.new_event_loop()
+            chemin = loop.run_until_complete(_dl_gridfs_async(fichier_id))
+            loop.close()
+            if chemin:
+                _gridfs_cache[fichier_id] = chemin
+            return chemin
+        except Exception as e:
+            print(f"Erreur GridFS download: {e}")
+            return None
+
+async def _dl_gridfs_async(fichier_id: str):
+    try:
+        from app.core.database import get_gridfs
+        from bson import ObjectId
+        fs = await get_gridfs()
+        grid_out = await fs.open_download_stream(ObjectId(fichier_id))
+        data = await grid_out.read()
+        tmp = tempfile.NamedTemporaryFile(suffix='.nii', delete=False)
+        tmp.write(data)
+        tmp.close()
+        return tmp.name
+    except Exception as e:
+        print(f"Erreur _dl_gridfs_async: {e}")
+        return None
 
 
 def _charger_volume(chemin):
