@@ -38,16 +38,17 @@ function ViewerInline({ irmId }) {
     setLoading(true)
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
-        .then(r => {
-          if (!r.ok) throw new Error('Erreur')
-          return r.json()
-        })
-        .then(d => {
-          setSrc(d.image)
-          setLoading(false)
-        })
-        .catch(() => setLoading(false))
+      // APRÈS — remplace par ceci
+fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
+  .then(r => {
+    if (!r.ok) throw new Error('Erreur')
+    return r.blob()
+  })
+  .then(blob => {
+    setSrc(URL.createObjectURL(blob))
+    setLoading(false)
+  })
+  .catch(() => setLoading(false))
     }, 150)
     return () => clearTimeout(debounceRef.current)
   }, [irmId, slice, nCoupes])
