@@ -173,7 +173,45 @@ async def download_irm(
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'}
     )
 
+@router.get("/patients/{patient_id}/irm/{irm_id}/fichier")
+async def servir_fichier_irm(
+    patient_id: str,
+    irm_id: str,
+    current_user=Depends(get_current_user)
+):
+    """Route utilisée par Niivue pour charger le fichier NIfTI directement."""
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
 
+    if not irm.fichier_path:
+        raise HTTPException(status_code=404, detail="Aucun fichier associé à cette IRM")
+
+    gridfs = get_gridfs()
+    try:
+        gridfs_stream = await gridfs.open_download_stream(ObjectId(irm.fichier_path))
+        contenu = await gridfs_stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Fichier introuvable dans le stockage")
+
+    nom_original = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
+    
+    # Détecter le content-type
+    if nom_original.endswith(".nii.gz"):
+        media_type = "application/gzip"
+    else:
+        media_type = "application/octet-stream"
+
+    return StreamingResponse(
+        io.BytesIO(contenu),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{nom_original}"',
+            "Content-Length": str(len(contenu)),
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "Content-Length, Content-Disposition",
+        }
+    )
 # ─── Viewer : info coupes ────────────────────────────────────────────────────
 
 async def _charger_nii_depuis_gridfs(irm: IRMScan) -> nib.Nifti1Image:
