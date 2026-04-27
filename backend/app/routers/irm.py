@@ -311,3 +311,59 @@ async def get_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
     return serialize(irm)
+# Ajoute ce 2ème router en bas du fichier irm.py
+
+viewer_router = APIRouter()
+
+@viewer_router.get("/viewer/{irm_id}/info")
+async def viewer_info_v2(irm_id: str):
+    irm = await IRMScan.get(irm_id)
+    if not irm:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+    img = await _charger_nii_depuis_gridfs(irm)
+    shape = img.shape
+    return {
+        "irm_id": irm_id,
+        "shape": list(shape),
+        "nb_slices_axial":    int(shape[2]) if len(shape) >= 3 else 0,
+        "nb_slices_coronal":  int(shape[1]) if len(shape) >= 2 else 0,
+        "nb_slices_sagittal": int(shape[0]) if len(shape) >= 1 else 0,
+        "metadata": irm.metadata_dicom,
+        "statut": irm.statut,
+    }
+
+@viewer_router.get("/viewer/{irm_id}/coupe/{plan}/{idx}")
+async def viewer_coupe_v2(irm_id: str, plan: str, idx: int):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    irm = await IRMScan.get(irm_id)
+    if not irm:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+
+    img = await _charger_nii_depuis_gridfs(irm)
+    data = img.get_fdata()
+
+    if plan == "axial":
+        idx = max(0, min(idx, data.shape[2] - 1))
+        coupe = data[:, :, idx]
+    elif plan == "coronal":
+        idx = max(0, min(idx, data.shape[1] - 1))
+        coupe = data[:, idx, :]
+    elif plan == "sagittal":
+        idx = max(0, min(idx, data.shape[0] - 1))
+        coupe = data[idx, :, :]
+    else:
+        raise HTTPException(status_code=400, detail="Plan invalide")
+
+    coupe = np.rot90(coupe)
+    vmin, vmax = np.percentile(coupe[coupe > 0], [2, 98]) if np.any(coupe > 0) else (0, 1)
+    fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
+    ax.imshow(coupe, cmap="gray", vmin=vmin, vmax=vmax, aspect="auto")
+    ax.axis("off")
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
