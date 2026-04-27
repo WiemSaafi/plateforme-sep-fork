@@ -38,8 +38,8 @@ export default function ViewerCompletIA({ irmId, onClose }) {
   // APRÈS
 // APRÈS — colle exactement ceci
 fetch(`/api/predictions/viewer/${irmId}/coupe/${slice}`, { headers })
-  .then(r => r.json())
-  .then(d => { setOrigSrc(d.image); setOrigLoading(false) })
+  .then(r => { if (!r.ok) throw new Error('Erreur'); return r.blob() })
+  .then(blob => { setOrigSrc(URL.createObjectURL(blob)); setOrigLoading(false) })
   .catch(() => setOrigLoading(false))
   }, [irmId, slice, nCoupes])
 
