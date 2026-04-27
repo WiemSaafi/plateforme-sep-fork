@@ -43,9 +43,7 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
         return
       }
 
-      
-
-      // 3️⃣ Charger Niivue
+      // 2️⃣ Charger Niivue
       const { Niivue } = await import('@niivue/niivue')
       niivueRef.current = null
 
@@ -59,71 +57,47 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
       niivueRef.current = nv
       await nv.attachToCanvas(canvasRef.current)
 
-      // ✅ URL absolue avec token en query param
       const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
 
+      // 3️⃣ onImageLoaded AVANT loadVolumes
+      nv.onImageLoaded = () => {
+        nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
+
+        // Auto-fenêtrage
+        const vol0 = nv.volumes[0]
+        if (vol0?.img) {
+          const sorted = Float32Array.from(vol0.img).filter(v => v > 0).sort()
+          if (sorted.length > 0) {
+            vol0.cal_min = sorted[Math.floor(sorted.length * 0.02)]
+            vol0.cal_max = sorted[Math.floor(sorted.length * 0.98)]
+            nv.updateGLVolume()
+          }
+        }
+
+        // Nombre de coupes
+        const vol = nv.volumes[0]
+        if (vol) {
+          const dims = vol.dims || vol.hdr?.dims || []
+          const nx = dims[1] || 0
+          const ny = dims[2] || 0
+          const nz = dims[3] || 0
+          const total = nz > 0 ? nz : Math.max(nx, ny)
+          console.log('nx:', nx, 'ny:', ny, 'nz:', nz, 'total:', total)
+          setTotalSlices(total)
+          setSlice(Math.floor(total / 2))
+        }
+
+        nv.drawScene()
+        setLoading(false)
+      }
+
+      // 4️⃣ Charger le volume
       await nv.loadVolumes([{
         url: urlFichier,
         name: `${sequenceType || 'IRM'}.nii`,
         colormap: 'gray',
         opacity: 1,
       }])
-
-      // 4️⃣ Auto-fenêtrage
-      const vol0 = nv.volumes[0]
-      if (vol0?.img) {
-        const sorted = Float32Array.from(vol0.img).filter(v => v > 0).sort()
-        if (sorted.length > 0) {
-          vol0.cal_min = sorted[Math.floor(sorted.length * 0.02)]
-          vol0.cal_max = sorted[Math.floor(sorted.length * 0.98)]
-          nv.updateGLVolume()
-        }
-      }
-
-      // 5️⃣ Mode 2D / 3D
-      nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
-
-      // 6️⃣ Nombre de coupes — cherche dans toutes les dimensions possibles
-      const vol = nv.volumes[0]
-      if (vol) {
-        console.log('vol.dims:', vol.dims, 'vol.hdr:', vol.hdr)
-        // dims = [ndim, nx, ny, nz, nt, ...]
-        const dims = vol.dims || vol.hdr?.dims || []
-        const nx = dims[1] || 0
-        const ny = dims[2] || 0
-        const nz = dims[3] || 0
-        // Prend la plus grande dimension comme nombre de coupes axiales
-        const total = nz > 0 ? nz : Math.max(nx, ny)
-        console.log('nx:', nx, 'ny:', ny, 'nz:', nz, 'total:', total)
-        setTotalSlices(total)
-        setSlice(Math.floor(total / 2))
-      }
-
-  // ✅ NOUVEAU
-nv.onImageLoaded = () => {
-  nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
-  
-  const vol = nv.volumes[0]
-  if (vol) {
-    const dims = vol.dims || vol.hdr?.dims || []
-    const nz = dims[3] || 0
-    const nx = dims[1] || 0
-    const ny = dims[2] || 0
-    const total = nz > 0 ? nz : Math.max(nx, ny)
-    setTotalSlices(total)
-    setSlice(Math.floor(total / 2))
-  }
-  
-  nv.drawScene()
-  setLoading(false)
-}
-
-await nv.loadVolumes([{
-  url: urlFichier,
-  name: `${sequenceType || 'IRM'}.nii`,
-  colormap: 'gray',
-  opacity: 1,
-}])
 
     } catch (e) {
       console.error('ViewerIRM error:', e)
@@ -178,7 +152,6 @@ await nv.loadVolumes([{
         </div>
       </div>
 
-      {/* ✅ Canvas toujours visible même si totalSlices = 0 */}
       <canvas ref={canvasRef} style={{
         width: '100%', height: '100%',
         display: loading || erreur ? 'none' : 'block'
