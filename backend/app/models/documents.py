@@ -36,7 +36,7 @@ class IRMScan(Document):
     patient_id: str
     visite_id: Optional[str] = None
     dicom_uid: str
-    fichier_path: Optional[str] = None
+    fichier_path: Optional[str] = None  # ✅ changé
     sequence_type: Optional[str] = None
     metadata_dicom: dict = {}
     statut: str = "pending"
@@ -46,7 +46,6 @@ class IRMScan(Document):
     radiologue_nom: Optional[str] = None
     envoi_medecin_id: Optional[str] = None
     envoye_at: Optional[datetime] = None
-
     class Settings:
         name = "irm_scans"
 
