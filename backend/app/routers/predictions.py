@@ -627,77 +627,22 @@ async def get_lesions_3d(irm_id: str, current_user=Depends(get_current_user)):
         traceback.print_exc()
         raise HTTPException(500, f"Erreur 3D : {str(e)}")
 
- # ══════════════════════════════════════════════════════
-# VIEWER IRM COMPLET — délégué à irm.viewer_router
+
+# ══════════════════════════════════════════════════════
+# VIEWER IRM COMPLET — Coupes individuelles
 # ══════════════════════════════════════════════════════
 
 @router.get("/viewer/{irm_id}/info")
 async def viewer_info(irm_id: str, current_user=Depends(get_current_user)):
-    irm = await IRMScan.get(irm_id)
-    if not irm:
-        raise HTTPException(404, "IRM non trouvée")
-    from app.routers.irm import _charger_nii_depuis_gridfs
-    img = await _charger_nii_depuis_gridfs(irm)
-    shape = img.shape
-    return {
-        "irm_id": irm_id,
-        "shape": list(shape),
-        "nb_slices_axial":    int(shape[2]) if len(shape) >= 3 else 0,
-        "nb_slices_coronal":  int(shape[1]) if len(shape) >= 2 else 0,
-        "nb_slices_sagittal": int(shape[0]) if len(shape) >= 1 else 0,
-        "metadata": irm.metadata_dicom,
-        "statut": irm.statut,
-    }
-
-
-@router.get("/viewer/{irm_id}/coupe/{plan}/{idx}")
-async def viewer_coupe(irm_id: str, plan: str, idx: int, current_user=Depends(get_current_user)):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import io
-    from fastapi.responses import StreamingResponse
-    from app.routers.irm import _charger_nii_depuis_gridfs
-
-    irm = await IRMScan.get(irm_id)
-    if not irm:
-        raise HTTPException(404, "IRM non trouvée")
-
-    img = await _charger_nii_depuis_gridfs(irm)
-    data = img.get_fdata()
-
-    if plan == "axial":
-        idx = max(0, min(idx, data.shape[2] - 1))
-        coupe = data[:, :, idx]
-    elif plan == "coronal":
-        idx = max(0, min(idx, data.shape[1] - 1))
-        coupe = data[:, idx, :]
-    elif plan == "sagittal":
-        idx = max(0, min(idx, data.shape[0] - 1))
-        coupe = data[idx, :, :]
-    else:
-        raise HTTPException(400, "Plan invalide. Utilise: axial, coronal, sagittal")
-
-    coupe = np.rot90(coupe)
-    vmin, vmax = np.percentile(coupe[coupe > 0], [2, 98]) if np.any(coupe > 0) else (0, 1)
-    fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
-    ax.imshow(coupe, cmap="gray", vmin=vmin, vmax=vmax, aspect="auto")
-    ax.axis("off")
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png")
-
+    from app.routers.irm import viewer_info as _viewer_info
+    return await _viewer_info(irm_id)
 
 @router.get("/viewer/{irm_id}/coupe/{idx}")
-async def viewer_coupe_simple(irm_id: str, idx: int, current_user=Depends(get_current_user)):
-    """Compatibilité ancienne route sans plan → axial par défaut"""
-    return await viewer_coupe(irm_id, "axial", idx, current_user)
-
+async def viewer_coupe_originale(irm_id: str, idx: int, current_user=Depends(get_current_user)):
+    from app.routers.irm import viewer_coupe as _viewer_coupe
+    return await _viewer_coupe(irm_id, "axial", idx)
 
 @router.get("/viewer/{irm_id}/overlay/{idx}")
 async def viewer_coupe_overlay(irm_id: str, idx: int, current_user=Depends(get_current_user)):
-    """Overlay → même chose que axial pour l'instant"""
-    return await viewer_coupe(irm_id, "axial", idx, current_user)
+    from app.routers.irm import viewer_coupe as _viewer_coupe
+    return await _viewer_coupe(irm_id, "axial", idx)
