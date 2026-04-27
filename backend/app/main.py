@@ -14,7 +14,14 @@ app = FastAPI(title="SEP Platform API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://plateforme-sep-fork.vercel.app",
+        "https://plateforme-sep-fork-git-main-wiemsaafis-projects.vercel.app",
+        "https://plateforme-sep-fork-j9k701fr8-wiemsaafis-projects.vercel.app",
+        "https://*.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
