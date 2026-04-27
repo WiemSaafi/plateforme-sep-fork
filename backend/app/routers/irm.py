@@ -258,28 +258,11 @@ async def servir_fichier_irm(
     if not irm or irm.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
 
-    # ✅ Vérifier que l'URL est valide
     if not irm.fichier_path or not irm.fichier_path.startswith("http"):
         raise HTTPException(status_code=404, detail="Fichier non disponible")
 
-    import httpx
-    async with httpx.AsyncClient() as client:
-        response = await client.get(irm.fichier_path, timeout=120.0)
-        contenu = response.content
-
-    nom = (irm.metadata_dicom or {}).get("nom_original", f"irm_{irm_id}.nii.gz")
-    media_type = "application/gzip" if nom.endswith(".nii.gz") else "application/octet-stream"
-
-    return StreamingResponse(
-        io.BytesIO(contenu),
-        media_type=media_type,
-        headers={
-            "Content-Disposition": f'inline; filename="{nom}"',
-            "Content-Length": str(len(contenu)),
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Expose-Headers": "Content-Length, Content-Disposition",
-        }
-    )
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=irm.fichier_path, status_code=302)
 
 
 @router.get("/{patient_id}/irm/{irm_id}/download")
