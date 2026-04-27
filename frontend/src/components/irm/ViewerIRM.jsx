@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Maximize2, Minimize2, Layers, Box, ChevronLeft, ChevronRight } from 'lucide-react'
 
 // ✅ Utilise la même base URL que api.js
-const API_BASE = import.meta.env.VITE_API_URL || ''
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '')
 
 export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType }) {
   const canvasRef = useRef(null)
