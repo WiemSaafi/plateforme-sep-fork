@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Maximize2, Minimize2, Layers, Box, ChevronLeft, ChevronRight } from 'lucide-react'
 
+// ✅ Utilise la même base URL que api.js
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 export default function ViewerIRM({ patientId, irmId, sequenceType }) {
   const canvasRef = useRef(null)
   const niivueRef = useRef(null)
-  const [mode, setMode] = useState('2D') // '2D' ou '3D'
+  const [mode, setMode] = useState('2D')
   const [loading, setLoading] = useState(true)
   const [erreur, setErreur] = useState(null)
   const [slice, setSlice] = useState(0)
@@ -14,100 +17,84 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
   const token = localStorage.getItem('token')
 
   useEffect(() => {
-    chargerViewer()
-    return () => {
-      if (niivueRef.current) {
-        niivueRef.current = null
-      }
-    }
+    if (irmId && patientId) chargerViewer()
+    return () => { niivueRef.current = null }
   }, [irmId, mode])
 
   const chargerViewer = async () => {
     setLoading(true)
     setErreur(null)
+
     try {
-      // D'abord vérifier si l'IRM existe
-      const checkResponse = await fetch(`/api/patients/${patientId}/irm/${irmId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      
-      if (!checkResponse.ok) {
-        setErreur("Aucune IRM trouvée pour ce patient")
+      // 1️⃣ Vérifier que l'IRM existe
+      const checkRes = await fetch(
+        `${API_BASE}/api/patients/${patientId}/irm/${irmId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (!checkRes.ok) {
+        setErreur("IRM introuvable")
         setLoading(false)
         return
       }
-
-      const irmData = await checkResponse.json()
-      
-      // Vérifier si l'IRM a un fichier
+      const irmData = await checkRes.json()
       if (!irmData.fichier_path && !irmData.fichier_url && !irmData.chemin_fichier) {
         setErreur("Aucun fichier IRM disponible pour cette IRM")
         setLoading(false)
         return
       }
 
-      // Vérifier si le fichier existe réellement
-      const fileResponse = await fetch(`/api/patients/${patientId}/irm/${irmId}/fichier`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      
-      if (!fileResponse.ok) {
-        setErreur("Le fichier IRM n'est pas disponible")
+      // 2️⃣ Vérifier que le fichier est accessible
+      const fichierRes = await fetch(
+        `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier`,
+        { method: 'HEAD', headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (!fichierRes.ok) {
+        setErreur("Le fichier IRM n'est pas disponible sur le serveur")
         setLoading(false)
         return
       }
 
+      // 3️⃣ Charger Niivue
       const { Niivue } = await import('@niivue/niivue')
-
-      if (niivueRef.current) {
-        niivueRef.current = null
-      }
+      niivueRef.current = null
 
       const nv = new Niivue({
         show3Dcrosshair: true,
         backColor: [0, 0, 0, 1],
         crosshairColor: [1, 0, 0, 1],
         isColorbar: true,
+        isOrientCube: true,
       })
-
       niivueRef.current = nv
       await nv.attachToCanvas(canvasRef.current)
 
-      // URL du fichier IRM via l'API
-      const url = `/api/patients/${patientId}/irm/${irmId}/fichier`
+      // ✅ URL absolue avec token en query param (Niivue ne supporte pas les headers custom)
+      const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
 
       await nv.loadVolumes([{
-        url,
+        url: urlFichier,
         name: `${sequenceType || 'IRM'}.nii`,
         colormap: 'gray',
         opacity: 1,
-        headers: { Authorization: `Bearer ${token}` }
       }])
 
-      // Auto-fenêtrage : percentiles 2%-98% pour éviter la saturation
+      // 4️⃣ Auto-fenêtrage
       const vol0 = nv.volumes[0]
-      if (vol0) {
-        const img = vol0.img
-        const sorted = Float32Array.from(img).filter(v => v > 0).sort()
+      if (vol0?.img) {
+        const sorted = Float32Array.from(vol0.img).filter(v => v > 0).sort()
         if (sorted.length > 0) {
-          const lo = sorted[Math.floor(sorted.length * 0.02)]
-          const hi = sorted[Math.floor(sorted.length * 0.98)]
-          vol0.cal_min = lo
-          vol0.cal_max = hi
+          vol0.cal_min = sorted[Math.floor(sorted.length * 0.02)]
+          vol0.cal_max = sorted[Math.floor(sorted.length * 0.98)]
           nv.updateGLVolume()
         }
       }
 
-      // Configurer le mode
-      if (mode === '3D') {
-        nv.setSliceType(nv.sliceTypeRender)
-      } else {
-        nv.setSliceType(nv.sliceTypeAxial)
-      }
+      // 5️⃣ Mode 2D / 3D
+      nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
 
+      // 6️⃣ Nombre de coupes
       const vol = nv.volumes[0]
       if (vol) {
-        // dims[0]=nb_dims, dims[1]=x, dims[2]=y, dims[3]=z (coupes axiales)
         const nz = vol.dims[3] || vol.dims[1] || 0
         setTotalSlices(nz)
         setSlice(Math.floor(nz / 2))
@@ -115,14 +102,8 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
 
       setLoading(false)
     } catch (e) {
-      console.error(e)
-      if (e.message && e.message.includes('404')) {
-        setErreur("Aucun fichier IRM disponible")
-      } else if (e.message && e.message.includes('Not Found')) {
-        setErreur("Aucun fichier IRM disponible")
-      } else {
-        setErreur('Erreur lors du chargement de l\'IRM')
-      }
+      console.error('ViewerIRM error:', e)
+      setErreur('Erreur lors du chargement de l\'IRM : ' + e.message)
       setLoading(false)
     }
   }
@@ -135,6 +116,7 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
     niivueRef.current.drawScene()
   }
 
+  // ... (le JSX reste identique — toolbar, canvas, loading, erreur, navigation)
   return (
     <div style={{
       background: '#000', borderRadius: '12px', overflow: 'hidden',
@@ -148,7 +130,6 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         zIndex: 10
       }}>
-        {/* Infos */}
         <div style={{
           background: 'rgba(0,0,0,0.7)', borderRadius: '8px',
           padding: '6px 12px', color: 'white', fontSize: '12px',
@@ -157,36 +138,28 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
           <span style={{ color: '#38bdf8', fontWeight: 600 }}>{sequenceType || 'IRM'}</span>
           {totalSlices > 0 && <span style={{ color: '#94a3b8' }}>Coupe {slice + 1}/{totalSlices}</span>}
         </div>
-
-        {/* Contrôles */}
         <div style={{ display: 'flex', gap: '6px' }}>
-          <button
-            onClick={() => setMode(mode === '2D' ? '3D' : '2D')}
-            style={{
-              background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px', padding: '6px 12px', color: 'white',
-              cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px'
-            }}>
+          <button onClick={() => setMode(mode === '2D' ? '3D' : '2D')} style={{
+            background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '8px', padding: '6px 12px', color: 'white',
+            cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px'
+          }}>
             {mode === '2D' ? <><Box size={14} /> 3D</> : <><Layers size={14} /> 2D</>}
           </button>
-          <button
-            onClick={() => setPlein(!plein)}
-            style={{
-              background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px', padding: '6px 10px', color: 'white', cursor: 'pointer'
-            }}>
+          <button onClick={() => setPlein(!plein)} style={{
+            background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '8px', padding: '6px 10px', color: 'white', cursor: 'pointer'
+          }}>
             {plein ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         </div>
       </div>
 
-      {/* Canvas Niivue */}
-      <canvas
-        ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: loading || erreur ? 'none' : 'block' }}
-      />
+      <canvas ref={canvasRef} style={{
+        width: '100%', height: '100%',
+        display: loading || erreur ? 'none' : 'block'
+      }} />
 
-      {/* Loading */}
       {loading && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
@@ -201,7 +174,6 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
         </div>
       )}
 
-      {/* Erreur */}
       {erreur && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
@@ -215,7 +187,6 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
         </div>
       )}
 
-      {/* Navigation coupes (mode 2D) */}
       {!loading && !erreur && mode === '2D' && totalSlices > 0 && (
         <div style={{
           position: 'absolute', bottom: '12px', left: '50%', transform: 'translateX(-50%)',
@@ -224,25 +195,17 @@ export default function ViewerIRM({ patientId, irmId, sequenceType }) {
         }}>
           <button onClick={() => changerSlice(-1)} style={{
             background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '2px'
-          }}>
-            <ChevronLeft size={18} />
-          </button>
-          <input
-            type="range" min="0" max={totalSlices - 1} value={slice}
-            onChange={e => { setSlice(Number(e.target.value)); changerSlice(0) }}
-            style={{ width: '120px', accentColor: '#38bdf8' }}
-          />
+          }}><ChevronLeft size={18} /></button>
+          <input type="range" min="0" max={totalSlices - 1} value={slice}
+            onChange={e => { const v = Number(e.target.value); setSlice(v); changerSlice(0) }}
+            style={{ width: '120px', accentColor: '#38bdf8' }} />
           <button onClick={() => changerSlice(1)} style={{
             background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '2px'
-          }}>
-            <ChevronRight size={18} />
-          </button>
+          }}><ChevronRight size={18} /></button>
         </div>
       )}
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
