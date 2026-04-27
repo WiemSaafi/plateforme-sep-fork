@@ -58,46 +58,42 @@ export default function ViewerIRM({ patientId, irmId, fichierPath, sequenceType 
       await nv.attachToCanvas(canvasRef.current)
 
       const urlFichier = `${API_BASE}/api/patients/${patientId}/irm/${irmId}/fichier?token=${token}`
+// ✅ NOUVEAU
+await nv.loadVolumes([{
+  url: urlFichier,
+  name: `${sequenceType || 'IRM'}.nii`,
+  colormap: 'gray',
+  opacity: 1,
+}])
 
-      // 3️⃣ onImageLoaded AVANT loadVolumes
-      nv.onImageLoaded = () => {
-        nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
+// Attendre que Niivue finisse le rendu
+await new Promise(resolve => setTimeout(resolve, 500))
 
-        // Auto-fenêtrage
-        const vol0 = nv.volumes[0]
-        if (vol0?.img) {
-          const sorted = Float32Array.from(vol0.img).filter(v => v > 0).sort()
-          if (sorted.length > 0) {
-            vol0.cal_min = sorted[Math.floor(sorted.length * 0.02)]
-            vol0.cal_max = sorted[Math.floor(sorted.length * 0.98)]
-            nv.updateGLVolume()
-          }
-        }
+nv.setSliceType(mode === '3D' ? nv.sliceTypeRender : nv.sliceTypeAxial)
 
-        // Nombre de coupes
-        const vol = nv.volumes[0]
-        if (vol) {
-          const dims = vol.dims || vol.hdr?.dims || []
-          const nx = dims[1] || 0
-          const ny = dims[2] || 0
-          const nz = dims[3] || 0
-          const total = nz > 0 ? nz : Math.max(nx, ny)
-          console.log('nx:', nx, 'ny:', ny, 'nz:', nz, 'total:', total)
-          setTotalSlices(total)
-          setSlice(Math.floor(total / 2))
-        }
+const vol0 = nv.volumes[0]
+if (vol0?.img) {
+  const sorted = Float32Array.from(vol0.img).filter(v => v > 0).sort()
+  if (sorted.length > 0) {
+    vol0.cal_min = sorted[Math.floor(sorted.length * 0.02)]
+    vol0.cal_max = sorted[Math.floor(sorted.length * 0.98)]
+    nv.updateGLVolume()
+  }
+}
 
-        nv.drawScene()
-        setLoading(false)
-      }
+const vol = nv.volumes[0]
+if (vol) {
+  const dims = vol.dims || vol.hdr?.dims || []
+  const nx = dims[1] || 0
+  const ny = dims[2] || 0
+  const nz = dims[3] || 0
+  const total = nz > 0 ? nz : Math.max(nx, ny)
+  setTotalSlices(total)
+  setSlice(Math.floor(total / 2))
+}
 
-      // 4️⃣ Charger le volume
-      await nv.loadVolumes([{
-        url: urlFichier,
-        name: `${sequenceType || 'IRM'}.nii`,
-        colormap: 'gray',
-        opacity: 1,
-      }])
+nv.drawScene()
+setLoading(false)
 
     } catch (e) {
       console.error('ViewerIRM error:', e)
