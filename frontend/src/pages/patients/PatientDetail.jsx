@@ -24,8 +24,11 @@ function ViewerInline({ irmId }) {
 
   useEffect(() => {
     fetch(`/api/predictions/viewer/${irmId}/info`, { headers })
-      .then(r => r.json())
-      .then(d => { setNCoupes(d.n_coupes || 0); setSlice(Math.floor((d.n_coupes || 0) / 2)) })
+      .then(r => r.json()).then(d => {
+  const n = d.nb_slices_axial || d.n_coupes || 0
+  setNCoupes(n)
+  setSlice(Math.floor(n / 2))
+})
       .catch(() => {})
   }, [irmId])
 
