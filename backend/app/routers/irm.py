@@ -15,6 +15,7 @@ from app.core.auth import get_current_user
 from app.core.database import get_db
 
 router = APIRouter()
+viewer_router = APIRouter()
 
 FORMATS_VALIDES = [".nii", ".nii.gz", ".dcm"]
 TAILLE_MAX_MB = 500
@@ -72,7 +73,34 @@ def get_gridfs() -> AsyncIOMotorGridFSBucket:
     return AsyncIOMotorGridFSBucket(db, bucket_name="irm_files")
 
 
-# ─── Upload IRM ─────────────────────────────────────────────────────────────
+# ─── Viewer : charger NIfTI depuis GridFS (helper partagé) ──────────────────
+
+async def _charger_nii_depuis_gridfs(irm: IRMScan) -> nib.Nifti1Image:
+    gridfs = get_gridfs()
+    try:
+        stream = await gridfs.open_download_stream(ObjectId(irm.fichier_path))
+        contenu = await stream.read()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans GridFS")
+
+    suffix = ".nii.gz"
+    if irm.metadata_dicom and irm.metadata_dicom.get("nom_original", "").endswith(".nii"):
+        suffix = ".nii"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(contenu)
+        tmp_path = tmp.name
+    try:
+        img = nib.load(tmp_path)
+        img = nib.as_closest_canonical(img)
+        return img
+    finally:
+        os.unlink(tmp_path)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ROUTER PATIENT  →  monté sur /api/patients
+# ════════════════════════════════════════════════════════════════════════════
 
 @router.post("/{patient_id}/irm")
 async def upload_irm(
@@ -112,7 +140,7 @@ async def upload_irm(
         }
     )
 
-    irm = IRMScan(
+    irm_doc = IRMScan(
         patient_id=patient_id,
         visite_id=visite_id,
         dicom_uid=str(uuid.uuid4()),
@@ -122,20 +150,39 @@ async def upload_irm(
         statut="en_attente",
         radiologue_id=str(current_user.id) if current_user else None,
     )
-    await irm.insert()
+    await irm_doc.insert()
 
     if visite_id:
         visite = await VisiteClinique.get(visite_id)
         if visite:
             if not visite.irm_ids:
                 visite.irm_ids = []
-            visite.irm_ids.append(str(irm.id))
+            visite.irm_ids.append(str(irm_doc.id))
             await visite.save()
 
-    return {"message": "IRM uploadée avec succès", "irm": serialize(irm)}
+    return {"message": "IRM uploadée avec succès", "irm": serialize(irm_doc)}
 
 
-# ─── Télécharger le fichier IRM ──────────────────────────────────────────────
+@router.get("/{patient_id}/irm")
+async def liste_irm_patient(
+    patient_id: str,
+    current_user=Depends(get_current_user)
+):
+    irms = await IRMScan.find(IRMScan.patient_id == patient_id).to_list()
+    return [serialize(irm) for irm in irms]
+
+
+@router.get("/{patient_id}/irm/{irm_id}")
+async def get_irm(
+    patient_id: str,
+    irm_id: str,
+    current_user=Depends(get_current_user)
+):
+    irm = await IRMScan.get(irm_id)
+    if not irm or irm.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="IRM non trouvée")
+    return serialize(irm)
+
 
 @router.get("/{patient_id}/irm/{irm_id}/download")
 async def download_irm(
@@ -167,8 +214,6 @@ async def download_irm(
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'}
     )
 
-
-# ─── Servir le fichier pour Niivue ───────────────────────────────────────────
 
 @router.get("/{patient_id}/irm/{irm_id}/fichier")
 async def servir_fichier_irm(
@@ -205,39 +250,18 @@ async def servir_fichier_irm(
     )
 
 
-# ─── Viewer : charger NIfTI depuis GridFS ────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+# VIEWER ROUTER  →  monté sur /api/predictions
+# Routes finales :
+#   GET /api/predictions/viewer/{irm_id}/info
+#   GET /api/predictions/viewer/{irm_id}/coupe/{plan}/{idx}
+# ════════════════════════════════════════════════════════════════════════════
 
-async def _charger_nii_depuis_gridfs(irm: IRMScan) -> nib.Nifti1Image:
-    gridfs = get_gridfs()
-    try:
-        stream = await gridfs.open_download_stream(ObjectId(irm.fichier_path))
-        contenu = await stream.read()
-    except Exception:
-        raise HTTPException(status_code=404, detail="Fichier IRM introuvable dans GridFS")
-
-    suffix = ".nii.gz"
-    if irm.metadata_dicom and irm.metadata_dicom.get("nom_original", "").endswith(".nii"):
-        suffix = ".nii"
-
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(contenu)
-        tmp_path = tmp.name
-    try:
-        img = nib.load(tmp_path)
-        img = nib.as_closest_canonical(img)
-        return img
-    finally:
-        os.unlink(tmp_path)
-
-
-# ─── Viewer info ─────────────────────────────────────────────────────────────
-
-@router.get("/predictions/viewer/{irm_id}/info")
+@viewer_router.get("/viewer/{irm_id}/info")
 async def viewer_info(irm_id: str):
     irm = await IRMScan.get(irm_id)
     if not irm:
         raise HTTPException(status_code=404, detail="IRM non trouvée")
-
     img = await _charger_nii_depuis_gridfs(irm)
     shape = img.shape
     return {
@@ -251,9 +275,7 @@ async def viewer_info(irm_id: str):
     }
 
 
-# ─── Viewer coupe PNG ─────────────────────────────────────────────────────────
-
-@router.get("/predictions/viewer/{irm_id}/coupe/{plan}/{idx}")
+@viewer_router.get("/viewer/{irm_id}/coupe/{plan}/{idx}")
 async def viewer_coupe(irm_id: str, plan: str, idx: int):
     import matplotlib
     matplotlib.use("Agg")
@@ -277,85 +299,6 @@ async def viewer_coupe(irm_id: str, plan: str, idx: int):
         coupe = data[idx, :, :]
     else:
         raise HTTPException(status_code=400, detail="Plan invalide. Utilise: axial, coronal, sagittal")
-
-    coupe = np.rot90(coupe)
-    vmin, vmax = np.percentile(coupe[coupe > 0], [2, 98]) if np.any(coupe > 0) else (0, 1)
-    fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
-    ax.imshow(coupe, cmap="gray", vmin=vmin, vmax=vmax, aspect="auto")
-    ax.axis("off")
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png")
-
-
-# ─── Liste IRM d'un patient ──────────────────────────────────────────────────
-
-@router.get("/{patient_id}/irm")
-async def liste_irm_patient(
-    patient_id: str,
-    current_user=Depends(get_current_user)
-):
-    irms = await IRMScan.find(IRMScan.patient_id == patient_id).to_list()
-    return [serialize(irm) for irm in irms]
-
-
-@router.get("/{patient_id}/irm/{irm_id}")
-async def get_irm(
-    patient_id: str,
-    irm_id: str,
-    current_user=Depends(get_current_user)
-):
-    irm = await IRMScan.get(irm_id)
-    if not irm or irm.patient_id != patient_id:
-        raise HTTPException(status_code=404, detail="IRM non trouvée")
-    return serialize(irm)
-# Ajoute ce 2ème router en bas du fichier irm.py
-
-viewer_router = APIRouter()
-
-@viewer_router.get("/viewer/{irm_id}/info")
-async def viewer_info_v2(irm_id: str):
-    irm = await IRMScan.get(irm_id)
-    if not irm:
-        raise HTTPException(status_code=404, detail="IRM non trouvée")
-    img = await _charger_nii_depuis_gridfs(irm)
-    shape = img.shape
-    return {
-        "irm_id": irm_id,
-        "shape": list(shape),
-        "nb_slices_axial":    int(shape[2]) if len(shape) >= 3 else 0,
-        "nb_slices_coronal":  int(shape[1]) if len(shape) >= 2 else 0,
-        "nb_slices_sagittal": int(shape[0]) if len(shape) >= 1 else 0,
-        "metadata": irm.metadata_dicom,
-        "statut": irm.statut,
-    }
-
-@viewer_router.get("/viewer/{irm_id}/coupe/{plan}/{idx}")
-async def viewer_coupe_v2(irm_id: str, plan: str, idx: int):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    irm = await IRMScan.get(irm_id)
-    if not irm:
-        raise HTTPException(status_code=404, detail="IRM non trouvée")
-
-    img = await _charger_nii_depuis_gridfs(irm)
-    data = img.get_fdata()
-
-    if plan == "axial":
-        idx = max(0, min(idx, data.shape[2] - 1))
-        coupe = data[:, :, idx]
-    elif plan == "coronal":
-        idx = max(0, min(idx, data.shape[1] - 1))
-        coupe = data[:, idx, :]
-    elif plan == "sagittal":
-        idx = max(0, min(idx, data.shape[0] - 1))
-        coupe = data[idx, :, :]
-    else:
-        raise HTTPException(status_code=400, detail="Plan invalide")
 
     coupe = np.rot90(coupe)
     vmin, vmax = np.percentile(coupe[coupe > 0], [2, 98]) if np.any(coupe > 0) else (0, 1)
